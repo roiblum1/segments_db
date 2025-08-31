@@ -1,0 +1,35 @@
+2025-08-31 22:47:05,027 - __main__ - INFO - Starting FastAPI server
+2025-08-31 22:47:20,089 - main - INFO - Starting Network Segment Manager
+2025-08-31 22:47:20,096 - main - INFO - Database empty, initializing with sample data
+2025-08-31 22:47:20,105 - main - INFO - Initialized database with 5 sample segments
+2025-08-31 22:52:34,765 - __main__ - INFO - Starting FastAPI server
+2025-08-31 22:53:07,192 - __main__ - INFO - Starting FastAPI server
+2025-08-31 22:53:20,135 - main - INFO - Starting Network Segment Manager
+2025-08-31 22:54:23,477 - main - INFO - Fetching segments - in_use: None, cluster: None
+2025-08-31 22:54:23,480 - main - INFO - Found 5 segments
+2025-08-31 22:55:15,502 - main - INFO - Fetching segment statistics
+2025-08-31 22:55:15,511 - main - INFO - Statistics: {'total_segments': 5, 'segments_in_use': 1, 'segments_available': 4, 'utilization_percentage': 20.0, 'active_clusters': 1}
+2025-08-31 22:55:40,648 - main - INFO - Fetching segments - in_use: None, cluster: None
+2025-08-31 22:55:40,649 - main - INFO - Found 5 segments
+2025-08-31 22:55:40,650 - main - INFO - Fetching segment statistics
+2025-08-31 22:55:40,651 - main - INFO - Statistics: {'total_segments': 5, 'segments_in_use': 1, 'segments_available': 4, 'utilization_percentage': 20.0, 'active_clusters': 1}
+2025-08-31 22:55:40,693 - main - INFO - Fetching segment statistics
+2025-08-31 22:55:40,695 - main - INFO - Statistics: {'total_segments': 5, 'segments_in_use': 1, 'segments_available': 4, 'utilization_percentage': 20.0, 'active_clusters': 1}
+2025-08-31 22:56:13,116 - main - INFO - Creating new segment: VLAN 240, Segment 192.168.1.0/24
+2025-08-31 22:56:13,134 - main - INFO - Successfully created segment with ID 6
+2025-08-31 22:56:13,143 - main - INFO - Fetching segments - in_use: None, cluster: None
+2025-08-31 22:56:13,144 - main - INFO - Found 6 segments
+2025-08-31 22:56:13,196 - main - INFO - Fetching segment statistics
+2025-08-31 22:56:13,199 - main - INFO - Statistics: {'total_segments': 6, 'segments_in_use': 1, 'segments_available': 5, 'utilization_percentage': 16.67, 'active_clusters': 1}
+2025-08-31 22:56:17,005 - main - INFO - Fetching segments - in_use: None, cluster: None
+2025-08-31 22:56:17,006 - main - INFO - Found 6 segments
+2025-08-31 22:56:17,016 - main - INFO - Fetching segment statistics
+2025-08-31 22:56:17,021 - main - INFO - Statistics: {'total_segments': 6, 'segments_in_use': 1, 'segments_available': 5, 'utilization_percentage': 16.67, 'active_clusters': 1}
+2025-08-31 22:56:30,896 - main - INFO - Requesting available segment from pool
+2025-08-31 22:56:30,901 - main - INFO - Found available segment: 10.100.0.0/24 (VLAN: 100)
+2025-08-31 22:56:30,911 - main - INFO - Allocating segment 1 to cluster bolbol
+2025-08-31 22:56:30,927 - main - INFO - Successfully allocated segment 1 to bolbol
+2025-08-31 22:56:30,937 - main - INFO - Fetching segments - in_use: None, cluster: None
+2025-08-31 22:56:30,939 - main - INFO - Found 6 segments
+2025-08-31 22:56:30,950 - main - INFO - Fetching segment statistics
+2025-08-31 22:56:30,955 - main - INFO - Statistics: {'total_segments': 6, 'segments_in_use': 2, 'segments_available': 4, 'utilization_percentage': 33.33, 'active_clusters': 2}

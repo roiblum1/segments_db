@@ -1,0 +1,35 @@
+# Traefik static configuration
+global:
+  checkNewVersion: false
+  sendAnonymousUsage: false
+
+# API and dashboard configuration
+api:
+  dashboard: true
+  insecure: true
+
+# Entry points
+entryPoints:
+  web:
+    address: ":80"
+
+# Docker provider
+providers:
+  docker:
+    endpoint: "unix:///var/run/docker.sock"
+    exposedByDefault: false
+    watch: true
+
+# Logging
+log:
+  level: INFO
+  format: common
+
+accessLog:
+  format: common
+
+# Metrics (optional)
+metrics:
+  prometheus:
+    addEntryPointsLabels: true
+    addServicesLabels: true

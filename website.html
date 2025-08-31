@@ -1,0 +1,678 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Network Segment Manager</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        h1 {
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .subtitle {
+            color: #666;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+
+        .stats-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        }
+
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #667eea;
+        }
+
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+            margin-top: 5px;
+        }
+
+        .main-content {
+            background: white;
+            border-radius: 10px;
+            padding: 20px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+
+        button {
+            background: #667eea;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: background 0.3s;
+        }
+
+        button:hover {
+            background: #5a67d8;
+        }
+
+        button:disabled {
+            background: #cbd5e0;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: #48bb78;
+        }
+
+        .btn-secondary:hover {
+            background: #38a169;
+        }
+
+        .btn-danger {
+            background: #f56565;
+        }
+
+        .btn-danger:hover {
+            background: #e53e3e;
+        }
+
+        .filter-container {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-left: auto;
+        }
+
+        select, input {
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+            font-size: 14px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            text-align: left;
+            padding: 12px;
+            border-bottom: 1px solid #e2e8f0;
+        }
+
+        th {
+            background: #f7fafc;
+            font-weight: 600;
+            color: #4a5568;
+        }
+
+        tr:hover {
+            background: #f7fafc;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+
+        .status-available {
+            background: #c6f6d5;
+            color: #22543d;
+        }
+
+        .status-in-use {
+            background: #feb2b2;
+            color: #742a2a;
+        }
+
+        .cluster-name {
+            background: #e6fffa;
+            color: #234e52;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+            font-size: 12px;
+        }
+
+        .modal {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0, 0, 0, 0.5);
+            justify-content: center;
+            align-items: center;
+            z-index: 1000;
+        }
+
+        .modal.active {
+            display: flex;
+        }
+
+        .modal-content {
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            max-width: 500px;
+            width: 90%;
+            max-height: 80vh;
+            overflow-y: auto;
+        }
+
+        .form-group {
+            margin-bottom: 15px;
+        }
+
+        .form-group label {
+            display: block;
+            margin-bottom: 5px;
+            font-weight: 500;
+            color: #4a5568;
+        }
+
+        .form-group input, .form-group select {
+            width: 100%;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 5px;
+        }
+
+        .form-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+
+        .error {
+            background: #fed7d7;
+            color: #9b2c2c;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+        }
+
+        .success {
+            background: #c6f6d5;
+            color: #22543d;
+            padding: 10px;
+            border-radius: 5px;
+            margin-bottom: 15px;
+        }
+
+        .loading {
+            text-align: center;
+            padding: 40px;
+            color: #718096;
+        }
+
+        .action-buttons {
+            display: flex;
+            gap: 5px;
+        }
+
+        .action-btn {
+            padding: 5px 10px;
+            font-size: 12px;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #ddd;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>
+                🌐 Network Segment Manager
+            </h1>
+            <div class="subtitle">OpenShift Hypershift Cluster Network Allocation System</div>
+        </header>
+
+        <div class="stats-container" id="stats">
+            <div class="stat-card">
+                <div class="stat-value">-</div>
+                <div class="stat-label">Total Segments</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">-</div>
+                <div class="stat-label">Available</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">-</div>
+                <div class="stat-label">In Use</div>
+            </div>
+            <div class="stat-card">
+                <div class="stat-value">-</div>
+                <div class="stat-label">Utilization</div>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <div class="controls">
+                <button onclick="showAddModal()">➕ Add Segment</button>
+                <button class="btn-secondary" onclick="getAvailableSegment()">🔍 Get Available</button>
+                <button onclick="refreshData()">🔄 Refresh</button>
+                
+                <div class="filter-container">
+                    <label>Filter:</label>
+                    <select id="filterStatus" onchange="filterSegments()">
+                        <option value="">All Segments</option>
+                        <option value="available">Available Only</option>
+                        <option value="in-use">In Use Only</option>
+                    </select>
+                </div>
+            </div>
+
+            <div id="message"></div>
+
+            <div id="tableContainer">
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Loading segments...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Add/Edit Modal -->
+    <div id="segmentModal" class="modal">
+        <div class="modal-content">
+            <h2 id="modalTitle">Add New Segment</h2>
+            <form id="segmentForm">
+                <div class="form-group">
+                    <label for="vlanId">VLAN ID *</label>
+                    <input type="number" id="vlanId" min="1" max="4094" required>
+                </div>
+                <div class="form-group">
+                    <label for="epgName">EPG Name *</label>
+                    <input type="text" id="epgName" required>
+                </div>
+                <div class="form-group">
+                    <label for="segment">Network Segment (CIDR) *</label>
+                    <input type="text" id="segment" placeholder="e.g., 10.100.0.0/24" required>
+                </div>
+                <div class="form-group">
+                    <label for="clusterUsing">Cluster Using (optional)</label>
+                    <input type="text" id="clusterUsing" placeholder="e.g., dev-cluster-1">
+                </div>
+                <div class="form-actions">
+                    <button type="button" onclick="closeModal()">Cancel</button>
+                    <button type="submit">Save</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <!-- Allocate Modal -->
+    <div id="allocateModal" class="modal">
+        <div class="modal-content">
+            <h2>Allocate Segment</h2>
+            <form id="allocateForm">
+                <input type="hidden" id="allocateSegmentId">
+                <div class="form-group">
+                    <label for="allocateClusterName">Cluster Name *</label>
+                    <input type="text" id="allocateClusterName" placeholder="e.g., prod-cluster-1" required>
+                </div>
+                <div class="form-actions">
+                    <button type="button" onclick="closeAllocateModal()">Cancel</button>
+                    <button type="submit">Allocate</button>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:8000/api';
+        let segments = [];
+        let editingId = null;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', () => {
+            refreshData();
+            
+            // Form submissions
+            document.getElementById('segmentForm').addEventListener('submit', handleSegmentSubmit);
+            document.getElementById('allocateForm').addEventListener('submit', handleAllocateSubmit);
+        });
+
+        async function refreshData() {
+            await loadSegments();
+            await loadStats();
+        }
+
+        async function loadSegments() {
+            try {
+                const response = await fetch(`${API_URL}/segments`);
+                segments = await response.json();
+                renderTable();
+            } catch (error) {
+                showMessage('Error loading segments: ' + error.message, 'error');
+            }
+        }
+
+        async function loadStats() {
+            try {
+                const response = await fetch(`${API_URL}/stats`);
+                const stats = await response.json();
+                
+                document.querySelector('.stats-container').innerHTML = `
+                    <div class="stat-card">
+                        <div class="stat-value">${stats.total_segments}</div>
+                        <div class="stat-label">Total Segments</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${stats.segments_available}</div>
+                        <div class="stat-label">Available</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${stats.segments_in_use}</div>
+                        <div class="stat-label">In Use</div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-value">${stats.utilization_percentage}%</div>
+                        <div class="stat-label">Utilization</div>
+                    </div>
+                `;
+            } catch (error) {
+                console.error('Error loading stats:', error);
+            }
+        }
+
+        function renderTable() {
+            const filter = document.getElementById('filterStatus').value;
+            let filteredSegments = segments;
+            
+            if (filter === 'available') {
+                filteredSegments = segments.filter(s => !s.in_use);
+            } else if (filter === 'in-use') {
+                filteredSegments = segments.filter(s => s.in_use);
+            }
+
+            const tableHTML = `
+                <table>
+                    <thead>
+                        <tr>
+                            <th>ID</th>
+                            <th>VLAN ID</th>
+                            <th>EPG Name</th>
+                            <th>Segment</th>
+                            <th>Status</th>
+                            <th>Cluster Using</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        ${filteredSegments.map(segment => `
+                            <tr>
+                                <td>${segment.id}</td>
+                                <td>${segment.vlan_id}</td>
+                                <td>${segment.epg_name}</td>
+                                <td><code>${segment.segment}</code></td>
+                                <td>
+                                    <span class="status-badge ${segment.in_use ? 'status-in-use' : 'status-available'}">
+                                        ${segment.in_use ? 'In Use' : 'Available'}
+                                    </span>
+                                </td>
+                                <td>
+                                    ${segment.cluster_using ? 
+                                        `<span class="cluster-name">${segment.cluster_using}</span>` : 
+                                        '-'}
+                                </td>
+                                <td>
+                                    <div class="action-buttons">
+                                        ${!segment.in_use ? 
+                                            `<button class="action-btn btn-secondary" onclick="showAllocateModal(${segment.id})">Allocate</button>` :
+                                            `<button class="action-btn btn-danger" onclick="releaseSegment(${segment.id})">Release</button>`
+                                        }
+                                        <button class="action-btn" onclick="editSegment(${segment.id})">Edit</button>
+                                        ${!segment.in_use ? 
+                                            `<button class="action-btn btn-danger" onclick="deleteSegment(${segment.id})">Delete</button>` :
+                                            ''
+                                        }
+                                    </div>
+                                </td>
+                            </tr>
+                        `).join('')}
+                    </tbody>
+                </table>
+            `;
+            
+            document.getElementById('tableContainer').innerHTML = tableHTML;
+        }
+
+        function filterSegments() {
+            renderTable();
+        }
+
+        function showAddModal() {
+            editingId = null;
+            document.getElementById('modalTitle').textContent = 'Add New Segment';
+            document.getElementById('segmentForm').reset();
+            document.getElementById('segmentModal').classList.add('active');
+        }
+
+        function editSegment(id) {
+            editingId = id;
+            const segment = segments.find(s => s.id === id);
+            
+            document.getElementById('modalTitle').textContent = 'Edit Segment';
+            document.getElementById('vlanId').value = segment.vlan_id;
+            document.getElementById('epgName').value = segment.epg_name;
+            document.getElementById('segment').value = segment.segment;
+            document.getElementById('clusterUsing').value = segment.cluster_using || '';
+            
+            document.getElementById('segmentModal').classList.add('active');
+        }
+
+        function closeModal() {
+            document.getElementById('segmentModal').classList.remove('active');
+            document.getElementById('segmentForm').reset();
+            editingId = null;
+        }
+
+        async function handleSegmentSubmit(e) {
+            e.preventDefault();
+            
+            const data = {
+                vlan_id: parseInt(document.getElementById('vlanId').value),
+                epg_name: document.getElementById('epgName').value,
+                segment: document.getElementById('segment').value,
+                cluster_using: document.getElementById('clusterUsing').value || null
+            };
+
+            try {
+                let response;
+                if (editingId) {
+                    response = await fetch(`${API_URL}/segments/${editingId}`, {
+                        method: 'PUT',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    });
+                } else {
+                    response = await fetch(`${API_URL}/segments`, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(data)
+                    });
+                }
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Operation failed');
+                }
+
+                showMessage(editingId ? 'Segment updated successfully' : 'Segment added successfully', 'success');
+                closeModal();
+                refreshData();
+            } catch (error) {
+                showMessage('Error: ' + error.message, 'error');
+            }
+        }
+
+        function showAllocateModal(segmentId) {
+            document.getElementById('allocateSegmentId').value = segmentId;
+            document.getElementById('allocateModal').classList.add('active');
+        }
+
+        function closeAllocateModal() {
+            document.getElementById('allocateModal').classList.remove('active');
+            document.getElementById('allocateForm').reset();
+        }
+
+        async function handleAllocateSubmit(e) {
+            e.preventDefault();
+            
+            const segmentId = document.getElementById('allocateSegmentId').value;
+            const clusterName = document.getElementById('allocateClusterName').value;
+
+            try {
+                const response = await fetch(`${API_URL}/segments/${segmentId}/allocate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ cluster_name: clusterName })
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Allocation failed');
+                }
+
+                showMessage('Segment allocated successfully', 'success');
+                closeAllocateModal();
+                refreshData();
+            } catch (error) {
+                showMessage('Error: ' + error.message, 'error');
+            }
+        }
+
+        async function releaseSegment(id) {
+            if (!confirm('Are you sure you want to release this segment?')) return;
+
+            try {
+                const response = await fetch(`${API_URL}/segments/${id}/release`, {
+                    method: 'POST'
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Release failed');
+                }
+
+                showMessage('Segment released successfully', 'success');
+                refreshData();
+            } catch (error) {
+                showMessage('Error: ' + error.message, 'error');
+            }
+        }
+
+        async function deleteSegment(id) {
+            if (!confirm('Are you sure you want to delete this segment?')) return;
+
+            try {
+                const response = await fetch(`${API_URL}/segments/${id}`, {
+                    method: 'DELETE'
+                });
+
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'Deletion failed');
+                }
+
+                showMessage('Segment deleted successfully', 'success');
+                refreshData();
+            } catch (error) {
+                showMessage('Error: ' + error.message, 'error');
+            }
+        }
+
+        async function getAvailableSegment() {
+            try {
+                const response = await fetch(`${API_URL}/segments/available`);
+                
+                if (!response.ok) {
+                    const error = await response.json();
+                    throw new Error(error.detail || 'No available segments');
+                }
+
+                const segment = await response.json();
+                showMessage(`Available segment found: ${segment.segment} (VLAN: ${segment.vlan_id}, EPG: ${segment.epg_name})`, 'success');
+            } catch (error) {
+                showMessage('Error: ' + error.message, 'error');
+            }
+        }
+
+        function showMessage(text, type) {
+            const messageDiv = document.getElementById('message');
+            messageDiv.className = type;
+            messageDiv.textContent = text;
+            messageDiv.style.display = 'block';
+            
+            setTimeout(() => {
+                messageDiv.style.display = 'none';
+            }, 5000);
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,103 @@
+
+version: '3.8'
+
+services:
+  segment-manager:
+    build: 
+      context: .
+      dockerfile: Dockerfile
+    container_name: segment-manager-app
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      # Application settings
+      - APP_NAME=Network Segment Manager
+      - DEBUG=false
+      - LOG_LEVEL=INFO
+      
+      # Database settings
+      - DATABASE_URL=sqlite:///./data/segment_database.db
+      
+      # Server settings
+      - HOST=0.0.0.0
+      - PORT=8000
+      
+      # Sample data
+      - LOAD_SAMPLE_DATA=true
+    volumes:
+      # Persistent data storage
+      - segment_data:/app/data
+      - segment_logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    networks:
+      - segment-network
+    labels:
+      - "com.segment-manager.description=Network Segment Manager API"
+      - "com.segment-manager.version=1.0.0"
+      # Traefik labels for reverse proxy
+      - "traefik.enable=true"
+      - "traefik.http.routers.segment-manager.rule=Host(`localhost`)"
+      - "traefik.http.routers.segment-manager.entrypoints=web"
+      - "traefik.http.services.segment-manager.loadbalancer.server.port=8000"
+      # Rate limiting middleware
+      - "traefik.http.routers.segment-manager.middlewares=rate-limit@docker"
+      - "traefik.http.middlewares.rate-limit.ratelimit.burst=100"
+
+  # Optional: Add Traefik reverse proxy for production
+  traefik:
+    image: docker.io/traefik:v3.0
+    container_name: segment-manager-traefik
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "8080:8080"  # Traefik dashboard
+    command:
+      # Enable Docker provider
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      
+      # Configure entry points
+      - --entrypoints.web.address=:80
+      
+      # Enable API and Dashboard
+      - --api.dashboard=true
+      - --api.insecure=true
+      
+      # Configure access logs
+      - --accesslog=true
+      - --log.level=INFO
+      
+      # Rate limiting
+      - --middlewares.rate-limit.ratelimit.burst=50
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - segment-network
+    profiles:
+      - with-proxy
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.localhost`)"
+      - "traefik.http.routers.traefik.service=api@internal"
+
+volumes:
+  segment_data:
+    driver: local
+    labels:
+      - "com.segment-manager.description=Persistent database storage"
+  segment_logs:
+    driver: local
+    labels:
+      - "com.segment-manager.description=Application logs storage"
+
+networks:
+  segment-network:
+    driver: bridge
+    labels:
+      - "com.segment-manager.description=Network for segment manager services"
