@@ -13,6 +13,7 @@ TAR_FILE="${IMAGE_NAME}-${VERSION}.tar"
 echo "🏗️  Building air-gapped Docker image for Network Segment Manager"
 echo "   Version: ${VERSION}"
 echo "   Image: ${FULL_IMAGE_NAME}"
+echo "   Features: Default user, no apt-update, no service account needed"
 
 # Build the air-gapped image
 echo "📦 Building image..."

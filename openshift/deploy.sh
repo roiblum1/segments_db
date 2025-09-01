@@ -34,11 +34,6 @@ oc apply -f configmap.yaml
 echo "💾 Creating persistent volumes..."
 oc apply -f pvc.yaml
 
-# Wait for PVCs to be bound
-echo "⏳ Waiting for PVCs to be bound..."
-oc wait --for=condition=Bound pvc/segment-manager-data-pvc --timeout=60s
-oc wait --for=condition=Bound pvc/segment-manager-logs-pvc --timeout=60s
-
 # Update deployment with correct image tag
 echo "🔄 Updating deployment with image tag: ${IMAGE_TAG}"
 sed "s|image: network-segment-manager:latest|image: ${IMAGE_NAME}|g" deployment.yaml > deployment-temp.yaml

@@ -17,11 +17,8 @@ spec:
         app: network-segment-manager
         version: v1.0.0
     spec:
-      # OpenShift security context
-      securityContext:
-        runAsNonRoot: true
-        # OpenShift will assign arbitrary UID, so don't specify runAsUser
-        fsGroup: 0  # Root group for file permissions
+      # Minimal security context - use default user
+      securityContext: {}
       containers:
       - name: segment-manager
         image: network-segment-manager:latest
@@ -67,10 +64,9 @@ spec:
           mountPath: /app/data
         - name: logs-volume
           mountPath: /app/logs
-        # Security context for the container
+        # Minimal container security context
         securityContext:
           allowPrivilegeEscalation: false
-          runAsNonRoot: true
           capabilities:
             drop:
             - ALL

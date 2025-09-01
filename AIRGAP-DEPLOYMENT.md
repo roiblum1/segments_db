@@ -7,10 +7,11 @@ This guide provides complete instructions for deploying the Network Segment Mana
 The Network Segment Manager has been modified for air-gapped deployment with the following features:
 
 - ✅ **No Network Dependencies**: No `apt-update` or internet access required during build/runtime
-- ✅ **OpenShift Compatible**: Supports arbitrary UIDs and security context constraints
+- ✅ **OpenShift Compatible**: Uses default container user, no custom service accounts needed
 - ✅ **Multi-Zone Architecture**: Office1, Office2, Office3 zone separation
 - ✅ **Persistent Storage**: SQLite database with PVC-backed persistence
 - ✅ **Self-Contained**: All dependencies bundled in the image
+- ✅ **Simplified Deployment**: No PVC waiting, runs as default user
 
 ## 📁 Files Structure
 
