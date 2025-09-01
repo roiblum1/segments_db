@@ -161,6 +161,23 @@ class SegmentAllocation(BaseModel):
         return SegmentBase.validate_cluster_name(v)
 
 
+class ZoneAllocationRequest(BaseModel):
+    """Schema for zone-based automatic segment allocation requests."""
+    
+    zone: str = Field(..., min_length=1, max_length=50, description="Zone where segment should be allocated")
+    cluster_name: str = Field(..., description="Name of the cluster requesting the segment")
+    
+    @field_validator('cluster_name')
+    @classmethod
+    def validate_cluster_name(cls, v: str) -> str:
+        return SegmentBase.validate_cluster_name(v)
+    
+    @field_validator('zone')
+    @classmethod
+    def validate_zone(cls, v: str) -> str:
+        return SegmentBase.validate_zone(v)
+
+
 class SegmentStats(BaseModel):
     """Schema for segment statistics."""
     

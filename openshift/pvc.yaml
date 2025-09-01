@@ -11,8 +11,8 @@ spec:
   resources:
     requests:
       storage: 5Gi
-  # Uncomment and adjust based on your OpenShift storage classes
-  # storageClassName: your-storage-class
+  # Use default storage class or adjust based on your OpenShift cluster
+  # storageClassName: gp2  # Common storage class names: gp2, standard, fast, slow
 ---
 apiVersion: v1
 kind: PersistentVolumeClaim
@@ -27,5 +27,5 @@ spec:
   resources:
     requests:
       storage: 2Gi
-  # Uncomment and adjust based on your OpenShift storage classes
-  # storageClassName: your-storage-class
+  # Use default storage class or adjust based on your OpenShift cluster
+  # storageClassName: gp2  # Common storage class names: gp2, standard, fast, slow

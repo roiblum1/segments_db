@@ -13,7 +13,7 @@ from app.core.config import settings
 from app.models.segment import Segment
 from app.schemas.segment import (
     SegmentCreate, SegmentUpdate, SegmentResponse, 
-    SegmentAllocation, SegmentStats, ZoneStats
+    SegmentAllocation, ZoneAllocationRequest, SegmentStats, ZoneStats
 )
 
 logger = get_logger("api.segments")
@@ -81,7 +81,16 @@ async def get_available_segment(
 @router.post("/segments", response_model=SegmentResponse)
 async def create_segment(segment: SegmentCreate, db: Session = Depends(get_db_session)):
     """Create a new segment in the pool with zone-based duplicate validation."""
-    logger.info(f"Creating new segment: Zone {segment.zone}, VLAN {segment.vlan_id}, Segment {segment.segment}")
+    logger.info(f"Creating new segment: Zone '{segment.zone}' (len: {len(segment.zone)}), VLAN {segment.vlan_id}, Segment {segment.segment}")
+    logger.info(f"Zone validation: available zones are {settings.zones}")
+    
+    # Validate zone is in allowed zones
+    if segment.zone not in settings.zones:
+        logger.error(f"Invalid zone '{segment.zone}' - allowed zones are: {settings.zones}")
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Invalid zone '{segment.zone}'. Allowed zones are: {', '.join(settings.zones)}"
+        )
     
     try:
         # Check if VLAN ID already exists in the same zone
@@ -185,6 +194,65 @@ async def allocate_segment(
         raise HTTPException(status_code=500, detail="Failed to allocate segment")
 
 
+@router.post("/allocate_segment", response_model=SegmentResponse)
+async def allocate_segment_by_zone(
+    allocation: ZoneAllocationRequest, 
+    db: Session = Depends(get_db_session)
+):
+    """Automatically allocate the next available segment in the specified zone to a cluster."""
+    logger.info(f"Auto-allocating segment in zone '{allocation.zone}' to cluster '{allocation.cluster_name}'")
+    
+    # Validate zone is in allowed zones
+    if allocation.zone not in settings.zones:
+        logger.error(f"Invalid zone '{allocation.zone}' - allowed zones are: {settings.zones}")
+        raise HTTPException(
+            status_code=400, 
+            detail=f"Invalid zone '{allocation.zone}'. Allowed zones are: {', '.join(settings.zones)}"
+        )
+    
+    try:
+        # Find the first available segment in the specified zone
+        available_segment = db.query(Segment).filter(
+            and_(
+                Segment.zone == allocation.zone,
+                Segment.in_use == False, 
+                Segment.cluster_using.is_(None)
+            )
+        ).order_by(Segment.id).first()
+        
+        if not available_segment:
+            logger.warning(f"No available segments in zone '{allocation.zone}'")
+            raise HTTPException(
+                status_code=404, 
+                detail=f"No available segments in zone '{allocation.zone}'"
+            )
+        
+        # Check if cluster already has segments allocated (warning only)
+        existing_allocation = db.query(Segment).filter(
+            Segment.cluster_using == allocation.cluster_name
+        ).first()
+        
+        if existing_allocation:
+            logger.info(f"Cluster '{allocation.cluster_name}' already has segment {existing_allocation.id} allocated (allowing multiple allocations)")
+        
+        # Allocate the segment
+        available_segment.cluster_using = allocation.cluster_name
+        available_segment.in_use = True
+        
+        db.commit()
+        db.refresh(available_segment)
+        
+        logger.info(f"Successfully auto-allocated segment {available_segment.id} (VLAN: {available_segment.vlan_id}, Segment: {available_segment.segment}) in zone '{allocation.zone}' to cluster '{allocation.cluster_name}'")
+        return available_segment
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        db.rollback()
+        logger.error(f"Error auto-allocating segment in zone '{allocation.zone}': {e}")
+        raise HTTPException(status_code=500, detail="Failed to allocate segment")
+
+
 @router.post("/segments/{segment_id}/release", response_model=SegmentResponse)
 async def release_segment(segment_id: int, db: Session = Depends(get_db_session)):
     """Release a segment (mark as not in use)."""
@@ -232,28 +300,40 @@ async def update_segment(
     update_data = segment_update.model_dump(exclude_unset=True)
     
     try:
-        # Check for duplicate VLAN ID if being updated
+        # Check for duplicate VLAN ID if being updated (within same zone)
         if 'vlan_id' in update_data and update_data['vlan_id'] != segment.vlan_id:
+            # Get the zone (either from update data or current segment)
+            check_zone = update_data.get('zone', segment.zone)
             existing_vlan = db.query(Segment).filter(
-                and_(Segment.vlan_id == update_data['vlan_id'], Segment.id != segment_id)
+                and_(
+                    Segment.zone == check_zone,
+                    Segment.vlan_id == update_data['vlan_id'], 
+                    Segment.id != segment_id
+                )
             ).first()
             if existing_vlan:
-                logger.error(f"Cannot update to VLAN ID {update_data['vlan_id']} - already exists")
+                logger.error(f"Cannot update to VLAN ID {update_data['vlan_id']} - already exists in zone {check_zone}")
                 raise HTTPException(
                     status_code=400, 
-                    detail=f"VLAN ID {update_data['vlan_id']} already exists"
+                    detail=f"VLAN ID {update_data['vlan_id']} already exists in zone {check_zone}"
                 )
         
-        # Check for duplicate segment if being updated
+        # Check for duplicate segment if being updated (within same zone)
         if 'segment' in update_data and update_data['segment'] != segment.segment:
+            # Get the zone (either from update data or current segment)
+            check_zone = update_data.get('zone', segment.zone)
             existing_segment = db.query(Segment).filter(
-                and_(Segment.segment == update_data['segment'], Segment.id != segment_id)
+                and_(
+                    Segment.zone == check_zone,
+                    Segment.segment == update_data['segment'], 
+                    Segment.id != segment_id
+                )
             ).first()
             if existing_segment:
-                logger.error(f"Cannot update to segment {update_data['segment']} - already exists")
+                logger.error(f"Cannot update to segment {update_data['segment']} - already exists in zone {check_zone}")
                 raise HTTPException(
                     status_code=400, 
-                    detail=f"Segment {update_data['segment']} already exists"
+                    detail=f"Segment {update_data['segment']} already exists in zone {check_zone}"
                 )
         
         # Apply updates
