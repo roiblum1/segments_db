@@ -34,7 +34,15 @@ class Settings(BaseSettings):
     log_backup_count: int = 5
     
     # Sample data settings
-    load_sample_data: bool = True
+    load_sample_data: bool = False
+    
+    # Zone settings - from environment/ConfigMap
+    default_zones: str = "Office1,Office2,Office3"
+    
+    @property
+    def zones(self) -> list[str]:
+        """Get list of available zones from configuration."""
+        return [zone.strip() for zone in self.default_zones.split(",") if zone.strip()]
     
     class Config:
         env_file = ".env"

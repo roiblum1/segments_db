@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.database import get_db
 from app.core.logging import get_logger
+from app.core.config import settings
 from app.models.segment import Segment
 from app.schemas.segment import (
     SegmentCreate, SegmentUpdate, SegmentResponse, 
@@ -421,3 +422,10 @@ async def get_zone_statistics(zone: str, db: Session = Depends(get_db_session)):
     except Exception as e:
         logger.error(f"Error fetching zone statistics: {e}")
         raise HTTPException(status_code=500, detail="Failed to fetch zone statistics")
+
+
+@router.get("/zones", response_model=List[str])
+async def get_zones():
+    """Get list of available zones from configuration."""
+    logger.info("Fetching available zones from configuration")
+    return settings.zones
