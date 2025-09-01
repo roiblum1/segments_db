@@ -418,6 +418,9 @@ tr:hover {
 
 /* Container width + centering */
 .max-w-7xl { max-width: 80rem; } /* 1280px */
+.max-w-sm { max-width: 24rem; }  /* 384px */
+.max-w-md { max-width: 28rem; }  /* 448px */
+.max-w-lg { max-width: 36rem; }  /* 576px */
 .mx-auto { margin-left: auto; margin-right: auto; }
 
 /* Spacing / gaps / margins */
