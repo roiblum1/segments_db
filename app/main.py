@@ -109,7 +109,7 @@ async def load_sample_data():
                         zone="Office3",
                         vlan_id=100, 
                         epg_name="Production-EPG", 
-                        segment="10.300.0.0/24", 
+                        segment="10.50.0.0/24", 
                         cluster_using=None, 
                         in_use=False
                     ),
@@ -117,7 +117,7 @@ async def load_sample_data():
                         zone="Office3",
                         vlan_id=101, 
                         epg_name="Production-EPG", 
-                        segment="10.300.1.0/24", 
+                        segment="10.50.1.0/24", 
                         cluster_using=None, 
                         in_use=False
                     ),
@@ -125,7 +125,7 @@ async def load_sample_data():
                         zone="Office3",
                         vlan_id=102, 
                         epg_name="Development-EPG", 
-                        segment="10.301.0.0/24", 
+                        segment="10.51.0.0/24", 
                         cluster_using="office3-dev-cluster", 
                         in_use=True
                     ),
@@ -133,7 +133,7 @@ async def load_sample_data():
                         zone="Office3",
                         vlan_id=103, 
                         epg_name="Testing-EPG", 
-                        segment="10.302.0.0/24", 
+                        segment="10.52.0.0/24", 
                         cluster_using=None, 
                         in_use=False
                     ),

@@ -1,0 +1,19 @@
+apiVersion: route.openshift.io/v1
+kind: Route
+metadata:
+  name: segment-manager-route
+  namespace: segment-manager
+  labels:
+    app: network-segment-manager
+spec:
+  to:
+    kind: Service
+    name: segment-manager-service
+    weight: 100
+  port:
+    targetPort: http
+  # For production, configure TLS
+  tls:
+    termination: edge
+    insecureEdgeTerminationPolicy: Redirect
+  wildcardPolicy: None

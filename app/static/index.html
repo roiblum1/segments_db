@@ -259,6 +259,60 @@
         </div>
     </div>
 
+    <!-- Allocate Next Available Modal -->
+    <div id="allocateNextModal" class="fixed inset-0 z-50 overflow-y-auto hidden">
+        <div class="flex items-end justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
+            <div class="fixed inset-0 bg-gray-500 bg-opacity-75 transition-opacity" onclick="closeModal('allocateNextModal')"></div>
+            
+            <span class="hidden sm:inline-block sm:align-middle sm:h-screen" aria-hidden="true">&#8203;</span>
+            
+            <div class="relative inline-block align-bottom bg-white dark:bg-gray-800 rounded-lg px-4 pt-5 pb-4 text-left overflow-hidden shadow-xl transform transition-all sm:my-8 sm:align-middle sm:max-w-lg sm:w-full sm:p-6">
+                <div class="sm:flex sm:items-start">
+                    <div class="mt-3 text-center sm:mt-0 sm:ml-0 sm:text-left w-full">
+                        <h3 class="text-lg leading-6 font-medium text-gray-900 dark:text-white mb-4">
+                            Allocate Next Available Segment
+                        </h3>
+                        <button onclick="closeModal('allocateNextModal')" class="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
+                            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path>
+                            </svg>
+                        </button>
+                    </div>
+                </div>
+                
+                <form id="allocateNextForm" class="space-y-4" onsubmit="handleAllocateNext(event)">
+                    <div>
+                        <label for="allocate_zone" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Select Zone</label>
+                        <select id="allocate_zone" name="zone" required
+                               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                            <option value="">Choose a zone</option>
+                            <option value="Office1">Office1</option>
+                            <option value="Office2">Office2</option>
+                            <option value="Office3">Office3</option>
+                        </select>
+                    </div>
+                    
+                    <div>
+                        <label for="allocate_cluster_name" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Cluster Name</label>
+                        <input type="text" id="allocate_cluster_name" name="cluster_name" required
+                               class="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 dark:bg-gray-700 dark:text-white rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500">
+                    </div>
+                    
+                    <div class="bg-gray-50 dark:bg-gray-700 px-4 py-3 sm:px-6 sm:flex sm:flex-row-reverse mt-6 -mx-4 -mb-4 sm:-mx-6 sm:-mb-4">
+                        <button type="submit" 
+                                class="w-full inline-flex justify-center rounded-md border border-transparent shadow-sm px-4 py-2 bg-green-600 text-base font-medium text-white hover:bg-green-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-green-500 sm:ml-3 sm:w-auto sm:text-sm">
+                            Allocate Next Available
+                        </button>
+                        <button type="button" onclick="closeModal('allocateNextModal')"
+                                class="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm">
+                            Cancel
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Use relative URLs to avoid CORS issues
         const API_BASE = '/api';
@@ -299,6 +353,7 @@
 
         // Load segments on page load
         document.addEventListener('DOMContentLoaded', function() {
+            console.log('DOM Content Loaded');
             initDarkMode();
             loadSegments();
             loadStats();
@@ -358,38 +413,70 @@
         }
 
         // Load segments
-        async function loadSegments() {
-            try {
-                console.log('Loading segments from:', `${API_BASE}/segments`);
-                const response = await fetch(`${API_BASE}/segments`);
-                
-                if (!response.ok) {
-                    throw new Error(`HTTP error! status: ${response.status}`);
-                }
-                
-                const segments = await response.json();
-                console.log('Loaded segments:', segments);
-                
-                const tableBody = document.getElementById('segments-table-body');
-                
-                // Store segments globally for filtering
-                window.allSegments = segments;
-                
-                // Load zones for filter dropdown
-                await loadZones();
-                
-                // Apply current filters
-                applyFilters();
-                
-                loadStats();
-            } catch (error) {
-                console.error('Error loading segments:', error);
-                showAlert('Error loading segments: ' + error.message, 'error');
-                
-                // Show error in table
-                const tableBody = document.getElementById('segments-table-body');
-                tableBody.innerHTML = `<tr><td colspan="8" class="px-6 py-8 text-center text-red-500">Error loading segments: ${error.message}</td></tr>`;
+        function loadSegments() {
+            console.log('loadSegments function called');
+            
+            fetch(`${API_BASE}/segments`)
+                .then(response => {
+                    console.log('Response received:', response.status);
+                    if (!response.ok) {
+                        throw new Error(`HTTP error! status: ${response.status}`);
+                    }
+                    return response.json();
+                })
+                .then(segments => {
+                    console.log('Loaded segments:', segments.length, 'segments');
+                    
+                    // Store segments globally for filtering
+                    window.allSegments = segments;
+                    
+                    // Display segments directly
+                    displaySegmentsSimple(segments);
+                    
+                    // Load zones after segments are displayed
+                    loadZones().catch(err => console.warn('Could not load zones:', err));
+                })
+                .catch(error => {
+                    console.error('Error loading segments:', error);
+                    showAlert('Error loading segments: ' + error.message, 'error');
+                    
+                    // Show error in table
+                    const tableBody = document.getElementById('segments-table-body');
+                    tableBody.innerHTML = `<tr><td colspan="8" class="px-6 py-8 text-center text-red-500">Error loading segments: ${error.message}</td></tr>`;
+                });
+        }
+        
+        // Simple display function for segments
+        function displaySegmentsSimple(segments) {
+            console.log('displaySegmentsSimple called with', segments.length, 'segments');
+            const tableBody = document.getElementById('segments-table-body');
+            
+            if (segments.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="8" class="px-6 py-8 text-center text-gray-500">No segments found</td></tr>';
+                return;
             }
+            
+            const rows = segments.map(segment => `
+                <tr class="hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors">
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900 dark:text-white">${segment.id}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-blue-600 dark:text-blue-400 font-medium">${segment.zone}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">${segment.vlan_id}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">${segment.epg_name}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500 dark:text-gray-300">${segment.segment}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500 dark:text-gray-300">${segment.cluster_using || '-'}</td>
+                    <td class="px-6 py-4 whitespace-nowrap">
+                        <span class="inline-flex px-2 py-1 text-xs font-semibold rounded-full ${segment.in_use ? 'bg-red-100 dark:bg-red-900 text-red-800 dark:text-red-200' : 'bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200'}">
+                            ${segment.in_use ? 'In Use' : 'Available'}
+                        </span>
+                    </td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                        <button onclick="alert('Actions coming soon')" class="text-blue-600 hover:text-blue-900">Edit</button>
+                    </td>
+                </tr>
+            `).join('');
+            
+            tableBody.innerHTML = rows;
+            console.log('Table updated with', segments.length, 'rows');
         }
         
         // Filter and display segments
@@ -451,15 +538,6 @@
                 </tr>
             `).join('');
         }
-            } catch (error) {
-                console.error('Error loading segments:', error);
-                showAlert('Error loading segments: ' + error.message, 'error');
-                
-                // Show error in table
-                const tableBody = document.getElementById('segments-table-body');
-                tableBody.innerHTML = `<tr><td colspan="8" class="px-6 py-8 text-center text-red-500">Error loading segments: ${error.message}</td></tr>`;
-            }
-        }
 
         // Show add segment modal
         function showAddSegmentModal() {
@@ -480,6 +558,8 @@
                 document.getElementById('addSegmentForm').reset();
             } else if (modalId === 'allocateModal') {
                 document.getElementById('allocateForm').reset();
+            } else if (modalId === 'allocateNextModal') {
+                document.getElementById('allocateNextForm').reset();
             }
         }
 
@@ -597,13 +677,31 @@
         }
 
         // Allocate next available segment
-        async function allocateNextSegment() {
-            const clusterName = prompt('Enter cluster name:');
-            if (!clusterName) return;
+        function allocateNextSegment() {
+            showAllocateNextModal();
+        }
+        
+        // Show allocate next available modal
+        function showAllocateNextModal() {
+            document.getElementById('allocateNextModal').classList.remove('hidden');
+        }
+        
+        // Handle allocate next form submission
+        async function handleAllocateNext(event) {
+            event.preventDefault();
+            
+            const formData = new FormData(event.target);
+            const zone = formData.get('zone');
+            const clusterName = formData.get('cluster_name');
+            
+            if (!zone || !clusterName) {
+                showAlert('Please fill in all fields', 'error');
+                return;
+            }
             
             try {
-                // First get an available segment
-                const availableResponse = await fetch(`${API_BASE}/segments/available`);
+                // First get an available segment from the specified zone
+                const availableResponse = await fetch(`${API_BASE}/segments/available?zone=${encodeURIComponent(zone)}`);
                 if (!availableResponse.ok) {
                     const error = await availableResponse.json();
                     showAlert(error.detail, 'error');
@@ -622,7 +720,9 @@
                 });
                 
                 if (response.ok) {
-                    showAlert(`Segment ${segment.segment} allocated to ${clusterName}`);
+                    showAlert(`Segment ${segment.segment} in ${zone} allocated to ${clusterName}`);
+                    closeModal('allocateNextModal');
+                    document.getElementById('allocateNextForm').reset();
                     loadSegments();
                 } else {
                     const error = await response.json();

@@ -1,0 +1,87 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: segment-manager
+  namespace: segment-manager
+  labels:
+    app: network-segment-manager
+    version: v1.0.0
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: network-segment-manager
+  template:
+    metadata:
+      labels:
+        app: network-segment-manager
+        version: v1.0.0
+    spec:
+      # OpenShift security context
+      securityContext:
+        runAsNonRoot: true
+        # OpenShift will assign arbitrary UID, so don't specify runAsUser
+        fsGroup: 0  # Root group for file permissions
+      containers:
+      - name: segment-manager
+        image: network-segment-manager:latest
+        imagePullPolicy: IfNotPresent  # For air-gapped environments
+        ports:
+        - containerPort: 8000
+          name: http
+          protocol: TCP
+        # Environment variables for configuration
+        env:
+        - name: DATABASE_URL
+          value: "sqlite:///app/data/segments.db"
+        - name: LOG_LEVEL
+          value: "INFO"
+        # Resource limits and requests
+        resources:
+          limits:
+            cpu: 500m
+            memory: 512Mi
+          requests:
+            cpu: 250m
+            memory: 256Mi
+        # Liveness and readiness probes (no curl needed)
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8000
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 3
+        # Volume mounts for persistent data
+        volumeMounts:
+        - name: data-volume
+          mountPath: /app/data
+        - name: logs-volume
+          mountPath: /app/logs
+        # Security context for the container
+        securityContext:
+          allowPrivilegeEscalation: false
+          runAsNonRoot: true
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: false  # SQLite needs write access
+      # Volumes for data persistence
+      volumes:
+      - name: data-volume
+        persistentVolumeClaim:
+          claimName: segment-manager-data-pvc
+      - name: logs-volume
+        persistentVolumeClaim:
+          claimName: segment-manager-logs-pvc
+      # Restart policy
+      restartPolicy: Always

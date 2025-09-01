@@ -1,0 +1,31 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: segment-manager-data-pvc
+  namespace: segment-manager
+  labels:
+    app: network-segment-manager
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  # Uncomment and adjust based on your OpenShift storage classes
+  # storageClassName: your-storage-class
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: segment-manager-logs-pvc
+  namespace: segment-manager
+  labels:
+    app: network-segment-manager
+spec:
+  accessModes:
+  - ReadWriteOnce
+  resources:
+    requests:
+      storage: 2Gi
+  # Uncomment and adjust based on your OpenShift storage classes
+  # storageClassName: your-storage-class

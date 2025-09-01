@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: segment-manager-config
+  namespace: segment-manager
+  labels:
+    app: network-segment-manager
+data:
+  # Application configuration
+  DATABASE_URL: "sqlite:///app/data/segments.db"
+  LOG_LEVEL: "INFO"
+  APP_VERSION: "v1.0.0"
+  
+  # Multi-zone configuration
+  DEFAULT_ZONES: "Office1,Office2,Office3"
+  
+  # Security configuration
+  CORS_ORIGINS: "*"  # Adjust for production
+  
+  # Performance configuration
+  WORKERS: "1"
+  MAX_CONNECTIONS: "100"
