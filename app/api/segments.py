@@ -366,22 +366,6 @@ async def get_statistics(db: Session = Depends(get_db_session)):
         raise HTTPException(status_code=500, detail="Failed to fetch statistics")
 
 
-@router.get("/zones", response_model=List[str])
-async def get_zones(db: Session = Depends(get_db_session)):
-    """Get list of all available zones."""
-    logger.info("Fetching available zones")
-    
-    try:
-        zones = db.query(Segment.zone).distinct().order_by(Segment.zone).all()
-        zone_list = [zone[0] for zone in zones]
-        
-        logger.info(f"Found zones: {zone_list}")
-        return zone_list
-        
-    except Exception as e:
-        logger.error(f"Error fetching zones: {e}")
-        raise HTTPException(status_code=500, detail="Failed to fetch zones")
-
 
 @router.get("/zones/{zone}/stats", response_model=ZoneStats)
 async def get_zone_statistics(zone: str, db: Session = Depends(get_db_session)):
@@ -428,4 +412,8 @@ async def get_zone_statistics(zone: str, db: Session = Depends(get_db_session)):
 async def get_zones():
     """Get list of available zones from configuration."""
     logger.info("Fetching available zones from configuration")
-    return settings.zones
+    zones_result = settings.zones
+    logger.info(f"DEFAULT_ZONES setting: {settings.default_zones}")
+    logger.info(f"Zones list: {zones_result}")
+    logger.info(f"Returning zones: {zones_result}")
+    return zones_result

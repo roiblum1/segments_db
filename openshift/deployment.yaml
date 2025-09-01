@@ -27,12 +27,14 @@ spec:
         - containerPort: 8000
           name: http
           protocol: TCP
-        # Environment variables for configuration
+        # Environment variables from ConfigMap
+        envFrom:
+        - configMapRef:
+            name: segment-manager-config
+        # Additional environment variables for configuration
         env:
         - name: DATABASE_URL
           value: "sqlite:///app/data/segments.db"
-        - name: LOG_LEVEL
-          value: "INFO"
         # Resource limits and requests
         resources:
           limits:
