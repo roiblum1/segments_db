@@ -12,17 +12,44 @@ service:
   port: 8000
   targetPort: 8000
 
-# Ingress configuration
+# OpenShift Route configuration
+route:
+  enabled: true  # Enable for OpenShift deployments
+  host: ""  # Leave empty for auto-generated, or specify like: vlan-manager.apps.cluster.domain
+  path: ""  # Optional path (e.g., "/vlan")
+  wildcardPolicy: None  # None, Subdomain
+  annotations:
+    # Add custom annotations if needed
+    # haproxy.router.openshift.io/timeout: 60s
+    # haproxy.router.openshift.io/rate-limit-connections: "true"
+    # haproxy.router.openshift.io/rate-limit-connections.concurrent-tcp: "20"
+    # haproxy.router.openshift.io/rate-limit-connections.rate-tcp: "10"
+  tls:
+    enabled: true
+    termination: edge  # edge, passthrough, or reencrypt
+    insecureEdgeTerminationPolicy: Redirect  # Allow, Redirect, or None
+    # For custom certificates (optional - OpenShift will use default if not provided)
+    certificate: ""  # PEM format certificate
+    key: ""  # PEM format private key
+    caCertificate: ""  # PEM format CA certificate
+    destinationCACertificate: ""  # For reencrypt termination
+
+# Kubernetes Ingress configuration (use this for non-OpenShift clusters)
 ingress:
-  enabled: false
+  enabled: false  # Set to true for standard Kubernetes
   className: ""
   annotations: {}
+    # kubernetes.io/ingress.class: nginx
+    # cert-manager.io/cluster-issuer: letsencrypt-prod
   hosts:
     - host: vlan-manager.local
       paths:
         - path: /
           pathType: Prefix
   tls: []
+    # - secretName: vlan-manager-tls
+    #   hosts:
+    #     - vlan-manager.local
 
 # Resource limits
 resources:
@@ -44,18 +71,32 @@ autoscaling:
 # Pod configuration
 replicaCount: 1
 podAnnotations: {}
-podSecurityContext: {}
-securityContext: {}
+podSecurityContext:
+  runAsNonRoot: true
+  # OpenShift assigns UIDs automatically, but you can specify if needed
+  # runAsUser: 1000
+  # fsGroup: 1000
+
+securityContext:
+  allowPrivilegeEscalation: false
+  capabilities:
+    drop:
+    - ALL
+  readOnlyRootFilesystem: false  # Set to false because app writes logs
+  runAsNonRoot: true
+  # runAsUser: 1000
+
 nodeSelector: {}
 tolerations: []
 affinity: {}
 
 # Environment variables
 env:
-  # MongoDB connection (required)
+  # MongoDB connection (update with your MongoDB details)
   MONGODB_URL: "mongodb://username:password@mongodb-service:27017/vlan_manager?authSource=admin"
   DATABASE_NAME: "vlan_manager"
   SITES: "site1,site2,site3"
+  # Add more sites as needed: "prod-dc1,prod-dc2,staging,dev"
 
 # Health check configuration
 livenessProbe:
@@ -79,6 +120,27 @@ readinessProbe:
 # Storage for logs
 persistence:
   enabled: false
-  storageClass: ""
+  storageClass: ""  # Leave empty for default, or specify like "ocs-storagecluster-ceph-rbd"
   accessMode: ReadWriteOnce
   size: 1Gi
+
+# MongoDB configuration (if deploying MongoDB alongside)
+mongodb:
+  enabled: false  # Set to true to deploy MongoDB with the application
+  auth:
+    enabled: true
+    rootPassword: "changeme"
+    database: "vlan_manager"
+    username: "vlanuser"
+    password: "changeme"
+  persistence:
+    enabled: true
+    size: 8Gi
+    storageClass: ""  # Leave empty for default
+  resources:
+    limits:
+      cpu: 1000m
+      memory: 1Gi
+    requests:
+      cpu: 500m
+      memory: 512Mi
