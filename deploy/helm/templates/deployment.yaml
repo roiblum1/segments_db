@@ -4,6 +4,10 @@ metadata:
   name: {{ include "vlan-manager.fullname" . }}
   labels:
     {{- include "vlan-manager.labels" . | nindent 4 }}
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 spec:
   {{- if not .Values.autoscaling.enabled }}
   replicas: {{ .Values.replicaCount }}
@@ -15,24 +19,21 @@ spec:
     metadata:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
       labels:
         {{- include "vlan-manager.selectorLabels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
     spec:
-      {{- with .Values.nodeSelector }}
-      nodeSelector:
+      {{- with .Values.image.pullSecrets }}
+      imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      {{- with .Values.affinity }}
-      affinity:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
-      {{- with .Values.tolerations }}
-      tolerations:
-        {{- toYaml . | nindent 8 }}
-      {{- end }}
+      serviceAccountName: {{ include "vlan-manager.serviceAccountName" . }}
       securityContext:
         {{- toYaml .Values.podSecurityContext | nindent 8 }}
       containers:
@@ -46,10 +47,39 @@ spec:
               containerPort: {{ .Values.service.targetPort }}
               protocol: TCP
           env:
-            {{- range $key, $value := .Values.env }}
-            - name: {{ $key }}
-              value: {{ $value | quote }}
+            # Environment variables from ConfigMap
+            - name: SITES
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "vlan-manager.fullname" . }}
+                  key: SITES
+            - name: DATABASE_NAME
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "vlan-manager.fullname" . }}
+                  key: DATABASE_NAME
+            - name: SERVER_HOST
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "vlan-manager.fullname" . }}
+                  key: SERVER_HOST
+            - name: SERVER_PORT
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "vlan-manager.fullname" . }}
+                  key: SERVER_PORT
+            {{- if .Values.mongodb.secret.create }}
+            # MongoDB connection from Secret
+            - name: MONGODB_URL
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Values.mongodb.secret.name | default (printf "%s-mongodb" (include "vlan-manager.fullname" .)) }}
+                  key: MONGODB_URL
             {{- end }}
+          {{- with .Values.startupProbe }}
+          startupProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           livenessProbe:
             {{- toYaml .Values.livenessProbe | nindent 12 }}
           readinessProbe:
@@ -61,6 +91,18 @@ spec:
             - name: logs
               mountPath: /app/logs
           {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
       {{- if .Values.persistence.enabled }}
       volumes:
         - name: logs

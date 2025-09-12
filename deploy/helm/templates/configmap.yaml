@@ -1,9 +1,21 @@
 apiVersion: v1
 kind: ConfigMap
 metadata:
-  name: {{ include "vlan-manager.fullname" . }}-config
+  name: {{ include "vlan-manager.fullname" . }}
   labels:
     {{- include "vlan-manager.labels" . | nindent 4 }}
+  {{- with .Values.commonAnnotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
 data:
-  sites.conf: |
-    {{- .Values.env.SITES | nindent 4 }}
+  # Application configuration
+  SITES: {{ .Values.config.sites | quote }}
+  DATABASE_NAME: {{ .Values.config.databaseName | quote }}
+  
+  # Server configuration
+  SERVER_HOST: {{ .Values.config.serverHost | quote }}
+  SERVER_PORT: {{ .Values.config.serverPort | quote }}
+  
+  # Logging configuration
+  LOG_LEVEL: {{ .Values.config.logLevel | quote }}
