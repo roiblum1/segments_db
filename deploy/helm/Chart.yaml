@@ -1,0 +1,16 @@
+apiVersion: v2
+name: vlan-manager
+description: A FastAPI-based VLAN segment management system
+type: application
+version: 0.1.0
+appVersion: "1.0.0"
+keywords:
+  - vlan
+  - network
+  - management
+  - fastapi
+home: https://github.com/your-org/vlan-manager
+sources:
+  - https://github.com/your-org/vlan-manager
+maintainers:
+  - name: VLAN Manager Team

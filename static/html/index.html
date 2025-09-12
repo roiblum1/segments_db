@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VLAN Manager</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+</head>
+<body>
+    <div class="theme-toggle" id="themeToggle">
+        <span class="theme-icon" id="themeIcon">🌙</span>
+        <span id="themeText">Dark</span>
+    </div>
+    
+    <div class="container">
+        <h1>🌐 VLAN Segment Manager</h1>
+        
+        <div id="errorBanner" class="error-banner"></div>
+        <div id="successBanner" class="success-banner"></div>
+        
+        <div class="stats-grid" id="statsGrid">
+            <div class="stat-card">
+                <h3>Loading...</h3>
+            </div>
+        </div>
+        
+        <div class="main-content">
+            <div class="card">
+                <h2>Add Segment</h2>
+                <form id="addSegmentForm">
+                    <div class="form-group">
+                        <label for="segmentSite">Site</label>
+                        <select id="segmentSite" required>
+                            <option value="">Select site...</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="vlanId">VLAN ID</label>
+                        <input type="number" id="vlanId" min="1" max="4094" placeholder="100" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="epgName">EPG Name</label>
+                        <input type="text" id="epgName" placeholder="EPG_PROD_01" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="networkSegment">Network Segment</label>
+                        <input type="text" id="networkSegment" placeholder="192.168.1.0/24" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="segmentDescription">Description</label>
+                        <input type="text" id="segmentDescription" placeholder="Optional description">
+                    </div>
+                    <button type="submit" id="addSegmentBtn">Add Segment</button>
+                </form>
+            </div>
+            
+            <div class="card">
+                <h2>Allocate Segment</h2>
+                <form id="allocateForm">
+                    <div class="form-group">
+                        <label for="clusterName">Cluster Name</label>
+                        <input type="text" id="clusterName" placeholder="cluster-prod-01" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="allocationSite">Site</label>
+                        <select id="allocationSite" required>
+                            <option value="">Select site...</option>
+                        </select>
+                    </div>
+                    <button type="submit" id="allocateBtn">Allocate Segment</button>
+                </form>
+                
+                <div id="allocationResult" style="margin-top: 20px;"></div>
+            </div>
+        </div>
+        
+        <div class="card full-width">
+            <h2>Bulk Import Segments</h2>
+            <div class="form-group">
+                <label for="bulkImport">Paste CSV data (site,vlan_id,epg_name,segment,description)</label>
+                <textarea id="bulkImport" placeholder="site1,100,EPG_PROD_01,192.168.1.0/24,Production segment
+site1,101,EPG_PROD_02,192.168.2.0/24,Production segment 2
+site2,200,EPG_DEV_01,10.0.1.0/24,Development segment"></textarea>
+            </div>
+            <button onclick="importBulk()">Import Segments</button>
+        </div>
+        
+        <div class="card full-width">
+            <h2>Segments</h2>
+            <div class="tabs">
+                <div class="tab active" data-filter="all">All</div>
+                <div class="tab" data-filter="available">Available</div>
+                <div class="tab" data-filter="allocated">Allocated</div>
+            </div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Site</th>
+                            <th>VLAN ID</th>
+                            <th>EPG Name</th>
+                            <th>Network Segment</th>
+                            <th>Cluster</th>
+                            <th>Status</th>
+                            <th>Description</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="segmentsList">
+                        <tr>
+                            <td colspan="8" class="empty-state">Loading segments...</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <div class="connection-status">
+        <div class="status-dot" id="statusDot"></div>
+        <span id="statusText">Connected</span>
+    </div>
+    
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
