@@ -37,34 +37,27 @@ class VLANService:
                     allocated_at=existing["allocated_at"]
                 )
             
-            # Find an available segment for this site
-            available_segment = await DatabaseUtils.find_available_segment(request.site)
+            # Atomically find and allocate an available segment for this site
+            allocated_segment = await DatabaseUtils.find_and_allocate_segment(
+                request.site, request.cluster_name
+            )
             
-            if not available_segment:
+            if not allocated_segment:
                 logger.error(f"No available segments for site: {request.site}")
                 raise HTTPException(
                     status_code=503, 
                     detail=f"No available segments for site: {request.site}"
                 )
             
-            # Allocate the segment
-            success = await DatabaseUtils.allocate_segment(
-                available_segment["_id"], request.cluster_name
-            )
-            
-            if not success:
-                logger.error(f"Failed to allocate segment {available_segment['vlan_id']}")
-                raise HTTPException(status_code=500, detail="Failed to allocate segment")
-            
-            logger.info(f"Allocated VLAN {available_segment['vlan_id']} (EPG: {available_segment['epg_name']}) to {request.cluster_name}")
+            logger.info(f"Allocated VLAN {allocated_segment['vlan_id']} (EPG: {allocated_segment['epg_name']}) to {request.cluster_name}")
             
             return VLANAllocationResponse(
-                vlan_id=available_segment["vlan_id"],
+                vlan_id=allocated_segment["vlan_id"],
                 cluster_name=request.cluster_name,
                 site=request.site,
-                segment=available_segment["segment"],
-                epg_name=available_segment["epg_name"],
-                allocated_at=datetime.utcnow()
+                segment=allocated_segment["segment"],
+                epg_name=allocated_segment["epg_name"],
+                allocated_at=allocated_segment["allocated_at"]
             )
             
         except HTTPException:

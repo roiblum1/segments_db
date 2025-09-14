@@ -2,6 +2,7 @@ import logging
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from bson import ObjectId
+from pymongo import ReturnDocument
 
 from ..database.mongodb import get_segments_collection
 from ..config.settings import SITES
@@ -22,23 +23,50 @@ class DatabaseUtils:
         })
     
     @staticmethod
+    async def find_and_allocate_segment(site: str, cluster_name: str) -> Optional[Dict[str, Any]]:
+        """Atomically find and allocate an available segment for a site"""
+        segments_collection = get_segments_collection()
+        allocation_time = datetime.utcnow()
+        
+        # Use findOneAndUpdate for atomic operation - prevents race conditions
+        # Find segments that are either never allocated (released: False, cluster_name: None) 
+        # OR have been released (released: True, cluster_name: None)
+        result = await segments_collection.find_one_and_update(
+            {
+                "site": site,
+                "cluster_name": None
+                # Remove released: False condition to allow reuse of released segments
+            },
+            {
+                "$set": {
+                    "cluster_name": cluster_name,
+                    "allocated_at": allocation_time,
+                    "released": False,
+                    "released_at": None
+                }
+            },
+            return_document=ReturnDocument.AFTER
+        )
+        return result
+    
+    @staticmethod
     async def find_available_segment(site: str) -> Optional[Dict[str, Any]]:
-        """Find an available segment for a site"""
+        """Find an available segment for a site (kept for backward compatibility)"""
         segments_collection = get_segments_collection()
         return await segments_collection.find_one({
             "site": site,
-            "cluster_name": None,
-            "released": False
+            "cluster_name": None
+            # Allow both released: False (never allocated) and released: True (previously released)
         })
     
     @staticmethod
     async def allocate_segment(segment_id: ObjectId, cluster_name: str) -> bool:
-        """Allocate a segment to a cluster"""
+        """Allocate a segment to a cluster (kept for backward compatibility)"""
         segments_collection = get_segments_collection()
         allocation_time = datetime.utcnow()
         
         result = await segments_collection.update_one(
-            {"_id": segment_id},
+            {"_id": segment_id, "cluster_name": None},  # Added condition to prevent race
             {
                 "$set": {
                     "cluster_name": cluster_name,

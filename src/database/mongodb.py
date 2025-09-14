@@ -1,6 +1,6 @@
 import logging
 from motor.motor_asyncio import AsyncIOMotorClient
-from ..config.settings import MONGODB_URL, DATABASE_NAME
+from ..config.settings import MONGODB_URL, DATABASE_NAME, MONGODB_SSL_SETTINGS
 
 logger = logging.getLogger(__name__)
 
@@ -14,10 +14,14 @@ async def connect_to_mongo():
     global motor_client, db, segments_collection
     
     try:
-        motor_client = AsyncIOMotorClient(MONGODB_URL, serverSelectionTimeoutMS=5000)
+        motor_client = AsyncIOMotorClient(
+            MONGODB_URL, 
+            serverSelectionTimeoutMS=5000,
+            **MONGODB_SSL_SETTINGS
+        )
         # Test connection
         await motor_client.server_info()
-        logger.info("Successfully connected to MongoDB")
+        logger.info("Successfully connected to MongoDB with insecure SSL")
         
         db = motor_client[DATABASE_NAME]
         segments_collection = db["segments"]
