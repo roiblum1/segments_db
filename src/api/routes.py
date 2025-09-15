@@ -9,6 +9,7 @@ from ..services.vlan_service import VLANService
 from ..services.segment_service import SegmentService
 from ..services.stats_service import StatsService
 from ..services.logs_service import LogsService
+from ..services.export_service import ExportService
 
 router = APIRouter()
 
@@ -44,7 +45,7 @@ async def create_segments_bulk(segments: List[SegmentCreate]):
     """Create multiple segments at once"""
     return await SegmentService.create_segments_bulk(segments)
 
-# Statistics and Configuration Routes
+# Statistics and Configuration Routes  
 @router.get("/sites")
 async def get_sites():
     """Get configured sites"""
@@ -59,6 +60,28 @@ async def get_stats():
 async def health_check():
     """Health check endpoint"""
     return await StatsService.health_check()
+
+# Export Routes
+@router.get("/export/segments/csv")
+async def export_segments_csv(
+    site: Optional[str] = None, 
+    allocated: Optional[bool] = None
+):
+    """Export segments data as CSV"""
+    return await ExportService.export_segments_csv(site=site, allocated=allocated)
+
+@router.get("/export/segments/excel")
+async def export_segments_excel(
+    site: Optional[str] = None, 
+    allocated: Optional[bool] = None
+):
+    """Export segments data as Excel"""
+    return await ExportService.export_segments_excel(site=site, allocated=allocated)
+
+@router.get("/export/stats/csv")
+async def export_stats_csv():
+    """Export site statistics as CSV"""
+    return await ExportService.export_stats_csv()
 
 # Logs Management Routes
 @router.get("/logs")
