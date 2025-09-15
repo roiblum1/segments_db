@@ -86,7 +86,14 @@ site2,200,EPG_DEV_01,10.0.1.0/24,Development segment"></textarea>
         </div>
         
         <div class="card full-width">
-            <h2>Segments</h2>
+            <div class="segments-header">
+                <h2>Segments</h2>
+                <div class="export-buttons">
+                    <button class="btn btn-secondary" onclick="exportData('csv')">📊 Export CSV</button>
+                    <button class="btn btn-secondary" onclick="exportData('excel')">📋 Export Excel</button>
+                    <button class="btn btn-secondary" onclick="exportStats('csv')">📈 Export Stats</button>
+                </div>
+            </div>
             <div class="tabs">
                 <div class="tab active" data-filter="all">All</div>
                 <div class="tab" data-filter="available">Available</div>

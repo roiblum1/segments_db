@@ -3,6 +3,83 @@ let currentFilter = 'all';
 let isOnline = true;
 let isDarkMode = localStorage.getItem('darkMode') === 'true';
 
+// Export Functions - Make explicitly global
+window.exportData = async function exportData(format) {
+    try {
+        let endpoint = '';
+        let filename = '';
+        
+        if (format === 'csv') {
+            endpoint = '/export/segments/csv';
+            filename = 'segments.csv';
+        } else if (format === 'excel') {
+            endpoint = '/export/segments/excel';
+            filename = 'segments.xlsx';
+        }
+        
+        // Add current filter parameters
+        const params = new URLSearchParams();
+        if (currentFilter === 'available') {
+            params.append('allocated', 'false');
+        } else if (currentFilter === 'allocated') {
+            params.append('allocated', 'true');
+        }
+        
+        const queryString = params.toString();
+        const fullEndpoint = queryString ? `${endpoint}?${queryString}` : endpoint;
+        
+        const response = await fetch(`/api${fullEndpoint}`);
+        
+        if (response.ok) {
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            
+            showSuccess(`${format.toUpperCase()} export completed`);
+        } else {
+            const error = await response.json();
+            showError(error.detail || 'Export failed');
+        }
+    } catch (error) {
+        console.error('Export error:', error);
+        showError('Export failed. Please try again.');
+    }
+};
+
+window.exportStats = async function exportStats(format) {
+    try {
+        const response = await fetch('/api/export/stats/csv');
+        
+        if (response.ok) {
+            const blob = await response.blob();
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.style.display = 'none';
+            a.href = url;
+            a.download = 'site_statistics.csv';
+            document.body.appendChild(a);
+            a.click();
+            window.URL.revokeObjectURL(url);
+            document.body.removeChild(a);
+            
+            showSuccess('Statistics export completed');
+        } else {
+            const error = await response.json();
+            showError(error.detail || 'Export failed');
+        }
+    } catch (error) {
+        console.error('Export stats error:', error);
+        showError('Export failed. Please try again.');
+    }
+};
+
 // Utility functions
 function showError(message) {
     const banner = document.getElementById('errorBanner');
@@ -439,3 +516,6 @@ function applyTheme(darkMode) {
         themeText.textContent = 'Dark';
     }
 }
+
+
+
