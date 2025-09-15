@@ -392,3 +392,86 @@ code {
 .theme-toggle:hover .theme-icon {
     transform: rotate(15deg);
 }
+
+
+/* Export Styles */
+.segments-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+}
+
+.export-buttons {
+    display: flex;
+    gap: 25px;
+    margin-left: 30px;
+}
+
+.export-buttons .btn {
+    padding: 8px 12px;
+    font-size: 14px;
+}
+
+/* Button Styles */
+.btn {
+    padding: 10px 20px;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+    font-size: 14px;
+    font-weight: 500;
+    transition: all 0.2s ease;
+    text-decoration: none;
+    display: inline-block;
+}
+
+.btn-primary {
+    background: #667eea;
+    color: white;
+}
+
+.btn-primary:hover {
+    background: #5a6fd8;
+    transform: translateY(-1px);
+}
+
+.btn-secondary {
+    background: var(--table-header);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+}
+
+.btn-secondary:hover {
+    background: var(--table-hover);
+    transform: translateY(-1px);
+}
+
+.btn-danger {
+    background: #f56565;
+    color: white;
+}
+
+.btn-danger:hover {
+    background: #e53e3e;
+    transform: translateY(-1px);
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+    
+    .segments-header {
+        flex-direction: column;
+        gap: 15px;
+        align-items: stretch;
+    }
+    
+    .export-buttons {
+        justify-content: center;
+    }
+    
+    .export-buttons .btn {
+        flex: 1;
+        min-width: 0;
+    }
+}
