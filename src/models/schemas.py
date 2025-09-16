@@ -1,6 +1,7 @@
 from typing import Optional, List
 from datetime import datetime
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, validator
+import ipaddress
 
 class Segment(BaseModel):
     site: str
@@ -35,3 +36,28 @@ class SegmentCreate(BaseModel):
     epg_name: str
     segment: str
     description: Optional[str] = ""
+    
+    @validator('segment')
+    def validate_segment_prefix(cls, segment, values):
+        """Validate that segment IP matches site prefix"""
+        site = values.get('site')
+        if not site:
+            return segment
+            
+        from src.config.settings import get_site_prefix
+        expected_prefix = get_site_prefix(site)
+        
+        try:
+            # Parse the network segment
+            network = ipaddress.ip_network(segment, strict=False)
+            first_octet = str(network.network_address).split('.')[0]
+            
+            if first_octet != expected_prefix:
+                raise ValueError(
+                    f"Invalid IP prefix for site '{site}'. "
+                    f"Expected to start with '{expected_prefix}', got '{first_octet}'"
+                )
+        except ipaddress.AddressValueError:
+            raise ValueError("Invalid IP network format")
+            
+        return segment

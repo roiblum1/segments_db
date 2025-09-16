@@ -1,5 +1,6 @@
 // Global state
 let currentFilter = 'all';
+let currentSite = '';
 let isOnline = true;
 let isDarkMode = localStorage.getItem('darkMode') === 'true';
 
@@ -23,6 +24,10 @@ window.exportData = async function exportData(format) {
             params.append('allocated', 'false');
         } else if (currentFilter === 'allocated') {
             params.append('allocated', 'true');
+        }
+        
+        if (currentSite) {
+            params.append('site', currentSite);
         }
         
         const queryString = params.toString();
@@ -129,6 +134,13 @@ async function fetchAPI(endpoint, options = {}) {
         
         if (!response.ok) {
             const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
+            
+            // Handle Pydantic validation errors (detail is an array)
+            if (Array.isArray(error.detail)) {
+                const messages = error.detail.map(err => err.msg || err.message || 'Validation error').join('; ');
+                throw new Error(messages);
+            }
+            
             throw new Error(error.detail || `HTTP ${response.status}`);
         }
         
@@ -154,15 +166,18 @@ async function loadSites() {
         
         const segmentSiteSelect = document.getElementById('segmentSite');
         const allocationSiteSelect = document.getElementById('allocationSite');
+        const siteFilterSelect = document.getElementById('siteFilter');
         
-        console.log('Found site selectors:', segmentSiteSelect, allocationSiteSelect);
+        console.log('Found site selectors:', segmentSiteSelect, allocationSiteSelect, siteFilterSelect);
         
         segmentSiteSelect.innerHTML = '<option value="">Select site...</option>';
         allocationSiteSelect.innerHTML = '<option value="">Select site...</option>';
+        siteFilterSelect.innerHTML = '<option value="">All Sites</option>';
         
         sites.forEach(site => {
             segmentSiteSelect.innerHTML += `<option value="${site}">${site}</option>`;
             allocationSiteSelect.innerHTML += `<option value="${site}">${site}</option>`;
+            siteFilterSelect.innerHTML += `<option value="${site}">${site}</option>`;
         });
         
         console.log('Sites loaded successfully:', sites);
@@ -171,6 +186,7 @@ async function loadSites() {
         showError('Failed to load sites: ' + error.message);
     }
 }
+
 
 async function loadStats() {
     try {
@@ -214,10 +230,21 @@ async function loadStats() {
 async function loadSegments() {
     try {
         let endpoint = '/segments';
+        const params = new URLSearchParams();
+        
         if (currentFilter === 'available') {
-            endpoint += '?allocated=false';
+            params.append('allocated', 'false');
         } else if (currentFilter === 'allocated') {
-            endpoint += '?allocated=true';
+            params.append('allocated', 'true');
+        }
+        
+        if (currentSite) {
+            params.append('site', currentSite);
+        }
+        
+        const queryString = params.toString();
+        if (queryString) {
+            endpoint += '?' + queryString;
         }
         
         const segments = await fetchAPI(endpoint);
@@ -441,6 +468,12 @@ document.addEventListener('DOMContentLoaded', function() {
             
             loadSegments();
         });
+    });
+    
+    // Site filter
+    document.getElementById('siteFilter').addEventListener('change', (e) => {
+        currentSite = e.target.value;
+        loadSegments();
     });
     
     // Initialize application

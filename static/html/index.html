@@ -94,10 +94,18 @@ site2,200,EPG_DEV_01,10.0.1.0/24,Development segment"></textarea>
                     <button class="btn btn-secondary" onclick="exportStats('csv')">📈 Export Stats</button>
                 </div>
             </div>
-            <div class="tabs">
-                <div class="tab active" data-filter="all">All</div>
-                <div class="tab" data-filter="available">Available</div>
-                <div class="tab" data-filter="allocated">Allocated</div>
+            <div class="filters">
+                <div class="status-tabs">
+                    <div class="tab active" data-filter="all">All</div>
+                    <div class="tab" data-filter="available">Available</div>
+                    <div class="tab" data-filter="allocated">Allocated</div>
+                </div>
+                <div class="site-filter">
+                    <label for="siteFilter">Filter by Site:</label>
+                    <select id="siteFilter">
+                        <option value="">All Sites</option>
+                    </select>
+                </div>
             </div>
             <div class="table-container">
                 <table>

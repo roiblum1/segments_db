@@ -17,6 +17,25 @@ MONGODB_SSL_SETTINGS = {
 SITES = os.getenv("SITES", "site1,site2,site3").split(",")
 SITES = [s.strip() for s in SITES if s.strip()]
 
+# Site IP Prefix Configuration
+# Format: "site1:192,site2:193,site3:194"
+SITE_PREFIXES_ENV = os.getenv("SITE_PREFIXES", "site1:192,site2:193,site3:194")
+
+def parse_site_prefixes(site_prefixes_str: str) -> dict:
+    """Parse site prefixes from environment variable"""
+    prefixes = {}
+    for pair in site_prefixes_str.split(","):
+        if ":" in pair:
+            site, prefix = pair.strip().split(":", 1)
+            prefixes[site.strip()] = prefix.strip()
+    return prefixes
+
+SITE_IP_PREFIXES = parse_site_prefixes(SITE_PREFIXES_ENV)
+
+def get_site_prefix(site: str) -> str:
+    """Get the IP prefix for a given site"""
+    return SITE_IP_PREFIXES.get(site, "192")
+
 # Logging Configuration
 def setup_logging():
     """Configure logging for the application"""

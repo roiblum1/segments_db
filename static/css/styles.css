@@ -272,10 +272,39 @@ tr:hover {
     grid-column: 1 / -1;
 }
 
-.tabs {
+/* Filter Styles */
+.filters {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    gap: 20px;
+}
+
+.status-tabs {
     display: flex;
     gap: 10px;
-    margin-bottom: 20px;
+}
+
+.site-filter {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.site-filter label {
+    font-weight: 500;
+    color: var(--text-color);
+}
+
+.site-filter select {
+    padding: 8px 12px;
+    border: 1px solid var(--border-color);
+    border-radius: 5px;
+    background: var(--input-bg);
+    color: var(--text-color);
+    font-size: 14px;
+    min-width: 150px;
 }
 
 .tab {
@@ -459,6 +488,19 @@ code {
 
 /* Responsive Design */
 @media (max-width: 768px) {
+    .filters {
+        flex-direction: column;
+        gap: 15px;
+        align-items: stretch;
+    }
+    
+    .status-tabs {
+        justify-content: center;
+    }
+    
+    .site-filter {
+        justify-content: center;
+    }
     
     .segments-header {
         flex-direction: column;

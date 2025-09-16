@@ -6,9 +6,12 @@ A modern, containerized VLAN segment management system built with FastAPI and Mo
 
 - 🔧 **VLAN Management**: Allocate and release VLAN segments for clusters
 - 🏢 **Multi-Site Support**: Manage VLANs across multiple sites
+- 🛡️ **Site IP Validation**: Automatic validation of IP prefixes per site (configurable)
 - 🌐 **Web Interface**: Modern, responsive UI with dark/light mode toggle
+- 🔍 **Advanced Filtering**: Filter segments by site and allocation status
+- 📊 **Export Capabilities**: CSV/Excel export with filtering support  
 - 🚀 **RESTful API**: Complete API for automation and integration
-- 📊 **Real-time Statistics**: Site utilization and availability metrics
+- 📈 **Real-time Statistics**: Site utilization and availability metrics
 - 📋 **Bulk Operations**: CSV import for mass segment creation
 - 📁 **Log Viewing**: Built-in log file viewer via web interface
 - 🐳 **Container Ready**: Docker/Podman deployment with health checks
@@ -50,6 +53,7 @@ pip install -r requirements.txt
 export MONGODB_URL="mongodb://username:password@your-mongo-host:27017/vlan_manager?authSource=admin"
 export DATABASE_NAME="vlan_manager"
 export SITES="site1,site2,site3"
+export SITE_PREFIXES="site1:192,site2:193,site3:194"
 
 # Run application
 python main.py
@@ -66,6 +70,7 @@ podman run -d \
   -p 8000:8000 \
   -e MONGODB_URL="mongodb://user:pass@mongo-host:27017/vlan_manager?authSource=admin" \
   -e SITES="site1,site2,site3" \
+  -e SITE_PREFIXES="site1:192,site2:193,site3:194" \
   vlan-manager
 ```
 
@@ -87,8 +92,11 @@ Access the application at **http://localhost:8000**
 
 ### Main Features:
 - **Dashboard**: Real-time statistics per site with utilization charts
-- **Segment Management**: Create, view, and delete VLAN segments
+- **Segment Management**: Create, view, and delete VLAN segments with IP validation
+- **Advanced Filtering**: Filter segments by site and allocation status
+- **Data Export**: Export filtered data to CSV or Excel formats
 - **VLAN Allocation**: Allocate segments to clusters with automatic tracking
+- **Site IP Validation**: Automatic validation ensures segments match site IP prefixes
 - **Bulk Import**: CSV import for multiple segments
 - **Dark Mode**: Toggle between light and dark themes
 - **Responsive Design**: Works on desktop, tablet, and mobile
@@ -97,12 +105,15 @@ Access the application at **http://localhost:8000**
 - `GET /api/health` - Health check and status
 - `GET /api/sites` - List configured sites
 - `GET /api/stats` - Site statistics and utilization
-- `GET /api/segments` - List segments with optional filters
-- `POST /api/segments` - Create new segment
+- `GET /api/segments` - List segments with optional filters (`site`, `allocated`)
+- `POST /api/segments` - Create new segment (with IP prefix validation)
 - `DELETE /api/segments/{id}` - Delete segment
 - `POST /api/segments/bulk` - Bulk create segments
 - `POST /api/allocate-vlan` - Allocate VLAN to cluster
 - `POST /api/release-vlan` - Release VLAN allocation
+- `GET /api/export/segments/csv` - Export segments to CSV
+- `GET /api/export/segments/excel` - Export segments to Excel  
+- `GET /api/export/stats/csv` - Export statistics to CSV
 - `GET /api/logs` - View application logs
 - `GET /docs` - Interactive API documentation
 
@@ -117,10 +128,20 @@ DATABASE_NAME="vlan_manager"
 # Site Configuration (Required)
 SITES="site1,site2,site3"
 
+# Site IP Prefix Validation (Optional)
+SITE_PREFIXES="site1:192,site2:193,site3:194"
+
 # Server Configuration (Optional)
 SERVER_HOST="0.0.0.0"
 SERVER_PORT="8000"
 ```
+
+### Site IP Validation
+Configure which IP address ranges are valid for each site:
+- **Format**: `"site1:192,site2:193,site3:194"`
+- **Default**: Sites default to 192 prefix if not specified
+- **Validation**: Ensures segment IPs match site-specific prefixes
+- **Example**: site1 only accepts `192.x.x.x/xx`, site2 only accepts `193.x.x.x/xx`
 
 ### MongoDB Setup
 The application automatically creates the required database indexes on startup:
@@ -143,6 +164,7 @@ podman run -d \
   -e MONGODB_URL="your-connection-string" \
   -e DATABASE_NAME="vlan_manager" \
   -e SITES="site1,site2,site3" \
+  -e SITE_PREFIXES="site1:192,site2:193,site3:194" \
   -v ./logs:/app/logs \
   --restart unless-stopped \
   vlan-manager
@@ -354,6 +376,14 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **API Docs**: http://localhost:8000/docs (when running)
 
 ## 🏷️ Version History
+
+- **v2.0.0**: Enhanced validation and filtering features
+  - Site-specific IP prefix validation
+  - Advanced segment filtering by site and status
+  - CSV/Excel export capabilities with filtering
+  - Improved error handling and user feedback
+  - Enhanced responsive UI design
+  - Optimized container image (347MB)
 
 - **v1.0.0**: Initial release with core VLAN management features
   - Web UI with dark mode
