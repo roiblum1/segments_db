@@ -31,6 +31,7 @@ class DatabaseUtils:
         # Use findOneAndUpdate for atomic operation - prevents race conditions
         # Find segments that are either never allocated (released: False, cluster_name: None) 
         # OR have been released (released: True, cluster_name: None)
+        # Sort by vlan_id to always allocate the smallest available VLAN ID first
         result = await segments_collection.find_one_and_update(
             {
                 "site": site,
@@ -45,6 +46,7 @@ class DatabaseUtils:
                     "released_at": None
                 }
             },
+            sort=[("vlan_id", 1)],  # Sort by vlan_id ascending to get smallest first
             return_document=ReturnDocument.AFTER
         )
         return result
