@@ -61,6 +61,82 @@ class SegmentService:
             raise HTTPException(status_code=500, detail=str(e))
     
     @staticmethod
+    async def get_segment_by_id(segment_id: str) -> Dict[str, Any]:
+        """Get a single segment by ID"""
+        logger.info(f"Getting segment: {segment_id}")
+        
+        try:
+            # Validate ObjectId format
+            Validators.validate_object_id(segment_id)
+            
+            # Get the segment
+            segment = await DatabaseUtils.get_segment_by_id(segment_id)
+            if not segment:
+                logger.warning(f"Segment not found: {segment_id}")
+                raise HTTPException(status_code=404, detail="Segment not found")
+            
+            # Convert ObjectId to string
+            segment["_id"] = str(segment["_id"])
+            
+            logger.debug(f"Retrieved segment {segment_id}")
+            return segment
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error retrieving segment: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @staticmethod
+    async def update_segment(segment_id: str, updated_segment: SegmentCreate) -> Dict[str, str]:
+        """Update a segment"""
+        logger.info(f"Updating segment: {segment_id}")
+        
+        try:
+            # Validate ObjectId format
+            Validators.validate_object_id(segment_id)
+            
+            # Validate site
+            Validators.validate_site(updated_segment.site)
+            
+            # Check if segment exists
+            existing_segment = await DatabaseUtils.get_segment_by_id(segment_id)
+            if not existing_segment:
+                logger.warning(f"Segment not found: {segment_id}")
+                raise HTTPException(status_code=404, detail="Segment not found")
+            
+            # Check if VLAN ID change would conflict (only if changing VLAN ID or site)
+            if (existing_segment["vlan_id"] != updated_segment.vlan_id or 
+                existing_segment["site"] != updated_segment.site):
+                if await DatabaseUtils.check_vlan_exists(updated_segment.site, updated_segment.vlan_id):
+                    logger.warning(f"VLAN {updated_segment.vlan_id} already exists for site {updated_segment.site}")
+                    raise HTTPException(
+                        status_code=400, 
+                        detail=f"VLAN {updated_segment.vlan_id} already exists for site {updated_segment.site}"
+                    )
+            
+            # Update the segment
+            success = await DatabaseUtils.update_segment_by_id(segment_id, {
+                "site": updated_segment.site,
+                "vlan_id": updated_segment.vlan_id,
+                "epg_name": updated_segment.epg_name,
+                "segment": updated_segment.segment,
+                "description": updated_segment.description
+            })
+            
+            if not success:
+                raise HTTPException(status_code=500, detail="Failed to update segment")
+            
+            logger.info(f"Updated segment {segment_id}")
+            return {"message": "Segment updated successfully"}
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error updating segment: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @staticmethod
     async def delete_segment(segment_id: str) -> Dict[str, str]:
         """Delete a segment"""
         logger.info(f"Deleting segment: {segment_id}")

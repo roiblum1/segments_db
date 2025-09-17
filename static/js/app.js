@@ -271,6 +271,11 @@ async function loadSegments() {
                     </td>
                     <td>${segment.description || '-'}</td>
                     <td>
+                        <button class="edit" 
+                                onclick="editSegment('${segment._id}')"
+                                data-segment-id="${segment._id}">
+                            Edit
+                        </button>
                         ${isAllocated ? `
                             <button class="release" 
                                     onclick="releaseSegment('${segment.cluster_name}', '${segment.site}')"
@@ -516,6 +521,149 @@ document.addEventListener('DOMContentLoaded', function() {
     
     // Initialize theme
     initTheme();
+});
+
+// Edit segment functionality
+async function editSegment(segmentId) {
+    try {
+        // Get segment details
+        const segment = await fetchAPI(`/segments/${segmentId}`);
+        
+        // Show edit modal
+        showEditModal(segment);
+    } catch (error) {
+        console.error('Failed to load segment for editing:', error);
+        showError('Failed to load segment details for editing');
+    }
+}
+
+function showEditModal(segment) {
+    // Create modal HTML
+    const modalHTML = `
+        <div id="editModal" class="modal">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Edit Segment</h3>
+                    <button class="close-modal" onclick="closeEditModal()">&times;</button>
+                </div>
+                <form id="editSegmentForm">
+                    <div class="form-group">
+                        <label for="editSite">Site</label>
+                        <select id="editSite" required>
+                            <option value="">Select site...</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label for="editVlanId">VLAN ID</label>
+                        <input type="number" id="editVlanId" min="1" max="4094" value="${segment.vlan_id}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="editEpgName">EPG Name</label>
+                        <input type="text" id="editEpgName" value="${segment.epg_name}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="editNetworkSegment">Network Segment</label>
+                        <input type="text" id="editNetworkSegment" value="${segment.segment}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="editDescription">Description</label>
+                        <input type="text" id="editDescription" value="${segment.description || ''}" placeholder="Optional description">
+                    </div>
+                    <div class="modal-actions">
+                        <button type="button" class="btn btn-secondary" onclick="closeEditModal()">Cancel</button>
+                        <button type="submit" class="btn btn-primary">Update Segment</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    `;
+    
+    // Add modal to DOM
+    document.body.insertAdjacentHTML('beforeend', modalHTML);
+    
+    // Load sites into dropdown and set current site
+    loadSitesForEdit(segment.site);
+    
+    // Add form submit handler
+    document.getElementById('editSegmentForm').addEventListener('submit', (e) => {
+        e.preventDefault();
+        updateSegment(segment._id);
+    });
+    
+    // Show modal
+    document.getElementById('editModal').style.display = 'block';
+}
+
+async function loadSitesForEdit(selectedSite) {
+    try {
+        const data = await fetchAPI('/sites');
+        const select = document.getElementById('editSite');
+        
+        select.innerHTML = '<option value="">Select site...</option>';
+        data.sites.forEach(site => {
+            const option = document.createElement('option');
+            option.value = site;
+            option.textContent = site;
+            if (site === selectedSite) {
+                option.selected = true;
+            }
+            select.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Failed to load sites for edit:', error);
+    }
+}
+
+async function updateSegment(segmentId) {
+    const form = document.getElementById('editSegmentForm');
+    const formData = new FormData(form);
+    
+    const segmentData = {
+        site: document.getElementById('editSite').value,
+        vlan_id: parseInt(document.getElementById('editVlanId').value),
+        epg_name: document.getElementById('editEpgName').value.trim(),
+        segment: document.getElementById('editNetworkSegment').value.trim(),
+        description: document.getElementById('editDescription').value.trim()
+    };
+    
+    try {
+        const updateBtn = form.querySelector('button[type="submit"]');
+        updateBtn.disabled = true;
+        updateBtn.textContent = 'Updating...';
+        
+        await fetchAPI(`/segments/${segmentId}`, {
+            method: 'PUT',
+            body: JSON.stringify(segmentData)
+        });
+        
+        closeEditModal();
+        showSuccess('Segment updated successfully');
+        await Promise.all([loadSegments(), loadStats()]);
+    } catch (error) {
+        console.error('Failed to update segment:', error);
+        showError('Failed to update segment: ' + error.message);
+    } finally {
+        const updateBtn = form.querySelector('button[type="submit"]');
+        if (updateBtn) {
+            updateBtn.disabled = false;
+            updateBtn.textContent = 'Update Segment';
+        }
+    }
+}
+
+function closeEditModal() {
+    const modal = document.getElementById('editModal');
+    if (modal) {
+        modal.remove();
+    }
+}
+
+// Close modal when clicking outside
+document.addEventListener('click', (e) => {
+    const modal = document.getElementById('editModal');
+    if (modal && e.target === modal) {
+        closeEditModal();
+    }
 });
 
 // Theme management

@@ -35,6 +35,16 @@ async def create_segment(segment: SegmentCreate):
     """Create a new segment"""
     return await SegmentService.create_segment(segment)
 
+@router.get("/segments/{segment_id}")
+async def get_segment(segment_id: str):
+    """Get a single segment by ID"""
+    return await SegmentService.get_segment_by_id(segment_id)
+
+@router.put("/segments/{segment_id}")
+async def update_segment(segment_id: str, segment: SegmentCreate):
+    """Update a segment"""
+    return await SegmentService.update_segment(segment_id, segment)
+
 @router.delete("/segments/{segment_id}")
 async def delete_segment(segment_id: str):
     """Delete a segment"""

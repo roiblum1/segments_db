@@ -160,6 +160,19 @@ class DatabaseUtils:
         return await segments_collection.find_one({"_id": ObjectId(segment_id)})
     
     @staticmethod
+    async def update_segment_by_id(segment_id: str, update_data: Dict[str, Any]) -> bool:
+        """Update segment by ID"""
+        if not ObjectId.is_valid(segment_id):
+            return False
+            
+        segments_collection = get_segments_collection()
+        result = await segments_collection.update_one(
+            {"_id": ObjectId(segment_id)},
+            {"$set": update_data}
+        )
+        return result.modified_count > 0
+    
+    @staticmethod
     async def delete_segment_by_id(segment_id: str) -> bool:
         """Delete segment by ID"""
         if not ObjectId.is_valid(segment_id):
