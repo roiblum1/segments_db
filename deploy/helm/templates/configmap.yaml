@@ -11,6 +11,7 @@ metadata:
 data:
   # Application configuration
   SITES: {{ .Values.config.sites | quote }}
+  SITE_PREFIXES: {{ .Values.config.sitePrefixes | quote }}
   DATABASE_NAME: {{ .Values.config.databaseName | quote }}
   
   # Server configuration

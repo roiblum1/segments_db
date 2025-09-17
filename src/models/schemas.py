@@ -48,7 +48,25 @@ class SegmentCreate(BaseModel):
         expected_prefix = get_site_prefix(site)
         
         try:
-            # Parse the network segment
+            # First validate that the segment includes explicit subnet mask
+            if '/' not in segment:
+                raise ValueError(
+                    f"Invalid network format. Segment must include subnet mask (e.g., '{segment}/24')"
+                )
+            
+            # Then validate that the segment is in proper network format
+            # Parse with strict=True to ensure it's a proper network address
+            try:
+                ipaddress.ip_network(segment, strict=True)
+            except ipaddress.AddressValueError:
+                # If strict parsing fails, get the correct network address
+                network_loose = ipaddress.ip_network(segment, strict=False)
+                correct_format = str(network_loose)
+                raise ValueError(
+                    f"Invalid network format. Use network address '{correct_format}' instead of '{segment}'"
+                )
+            
+            # Parse the network segment for site prefix validation
             network = ipaddress.ip_network(segment, strict=False)
             first_octet = str(network.network_address).split('.')[0]
             

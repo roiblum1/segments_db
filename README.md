@@ -218,8 +218,9 @@ Complete Helm chart included for enterprise deployments.
 ```bash
 # Basic deployment
 helm install vlan-manager ./deploy/helm \
-  --set env.MONGODB_URL="mongodb://user:pass@mongo:27017/vlan_manager?authSource=admin" \
-  --set env.SITES="site1,site2,site3"
+  --set mongodb.secret.url="mongodb://user:pass@mongo:27017/vlan_manager?authSource=admin" \
+  --set config.sites="site1,site2,site3" \
+  --set config.sitePrefixes="site1:192,site2:193,site3:194"
 
 # Production deployment with custom values
 helm install vlan-manager ./deploy/helm -f production-values.yaml
@@ -232,7 +233,9 @@ oc new-project vlan-manager
 
 # Deploy
 helm install vlan-manager ./deploy/helm \
-  --set env.MONGODB_URL="mongodb://user:pass@mongodb:27017/vlan_manager?authSource=admin"
+  --set mongodb.secret.url="mongodb://user:pass@mongodb:27017/vlan_manager?authSource=admin" \
+  --set config.sites="site1,site2,site3" \
+  --set config.sitePrefixes="site1:192,site2:193,site3:194"
 
 # Expose route
 oc expose service vlan-manager

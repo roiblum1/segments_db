@@ -7,7 +7,7 @@ fullnameOverride: ""
 # Image configuration
 image:
   repository: vlan-manager
-  tag: latest
+  tag: v2.0.0
   pullPolicy: IfNotPresent
   pullSecrets: []
 
@@ -64,6 +64,7 @@ mongodb:
 # Application ConfigMap
 config:
   sites: "site1,site2,site3"
+  sitePrefixes: "site1:192,site2:193,site3:194"
   databaseName: "vlan_manager"
   serverHost: "0.0.0.0"
   serverPort: "8000"

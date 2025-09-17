@@ -53,6 +53,11 @@ spec:
                 configMapKeyRef:
                   name: {{ include "vlan-manager.fullname" . }}
                   key: SITES
+            - name: SITE_PREFIXES
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "vlan-manager.fullname" . }}
+                  key: SITE_PREFIXES
             - name: DATABASE_NAME
               valueFrom:
                 configMapKeyRef:
