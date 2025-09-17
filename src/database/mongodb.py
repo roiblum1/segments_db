@@ -50,6 +50,16 @@ async def init_db():
         await segments_collection.create_index([("cluster_name", 1)])
         await segments_collection.create_index([("site", 1), ("released", 1)])
         await segments_collection.create_index([("epg_name", 1)])
+        
+        # Optimized indexes for allocation queries
+        await segments_collection.create_index([("site", 1), ("cluster_name", 1), ("vlan_id", 1)])
+        await segments_collection.create_index([("cluster_name", 1), ("site", 1), ("released", 1)])
+        
+        # Additional performance indexes
+        await segments_collection.create_index([("cluster_name", 1), ("vlan_id", 1)])  # Global filtering + sorting
+        await segments_collection.create_index([("site", 1), ("cluster_name", 1), ("released", 1)])  # Statistics optimization
+        await segments_collection.create_index([("allocated_at", 1)])  # Timestamp queries
+        await segments_collection.create_index([("released_at", 1)])  # Timestamp queries
         logger.info("Database indexes created successfully")
     except Exception as e:
         logger.error(f"Error creating indexes: {e}")

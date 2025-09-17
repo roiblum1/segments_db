@@ -144,11 +144,23 @@ Configure which IP address ranges are valid for each site:
 - **Example**: site1 only accepts `192.x.x.x/xx`, site2 only accepts `193.x.x.x/xx`
 
 ### MongoDB Setup
-The application automatically creates the required database indexes on startup:
-- Unique index on `(site, vlan_id)`
-- Index on `cluster_name` for allocation queries
-- Index on `(site, released)` for availability queries
-- Index on `epg_name` for EPG-based searches
+The application automatically creates comprehensive database indexes on startup for optimal performance:
+
+**Core Indexes:**
+- Unique index on `(site, vlan_id)` - Prevents duplicate VLANs per site
+- Index on `cluster_name` - Basic allocation queries
+- Index on `(site, released)` - Availability queries
+- Index on `epg_name` - EPG-based searches
+
+**Optimized Compound Indexes:**
+- `(site, cluster_name, vlan_id)` - Perfect for allocation queries with sorting
+- `(cluster_name, site, released)` - Existing allocation checks
+- `(cluster_name, vlan_id)` - Global filtering with sorting
+- `(site, cluster_name, released)` - Statistics calculations
+
+**Timestamp Indexes:**
+- `(allocated_at)` - Allocation time queries
+- `(released_at)` - Release time queries
 
 ## 🐳 Container Deployment
 
