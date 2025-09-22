@@ -1,6 +1,7 @@
 from contextlib import asynccontextmanager
-from fastapi import FastAPI
-from fastapi.responses import HTMLResponse
+from pathlib import Path
+from fastapi import FastAPI, Request
+from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -29,8 +30,30 @@ async def lifespan(app: FastAPI):
 # FastAPI app - used by uvicorn server
 app = FastAPI(title="VLAN Manager API", lifespan=lifespan)
 
-# Mount static files
-app.mount("/static", StaticFiles(directory="static"), name="static")
+# Custom StaticFiles class with caching headers
+class CachedStaticFiles(StaticFiles):
+    def file_response(self, full_path, stat_result, scope, status_code=200):
+        response = super().file_response(full_path, stat_result, scope, status_code)
+        
+        # Convert to Path object and get file extension
+        path = Path(full_path)
+        file_extension = path.suffix.lower()
+        
+        # Add cache headers for static assets
+        if file_extension in ['.css', '.js', '.png', '.jpg', '.jpeg', '.gif', '.ico', '.svg']:
+            # Cache for 1 year (static assets with versioning)
+            response.headers["Cache-Control"] = "public, max-age=31536000, immutable"
+        elif file_extension in ['.html']:
+            # Cache HTML for 1 hour but allow revalidation
+            response.headers["Cache-Control"] = "public, max-age=3600, must-revalidate"
+        else:
+            # Default cache for other files
+            response.headers["Cache-Control"] = "public, max-age=86400"  # 1 day
+            
+        return response
+
+# Mount static files with caching
+app.mount("/static", CachedStaticFiles(directory="static"), name="static")
 
 # CORS middleware
 app.add_middleware(
