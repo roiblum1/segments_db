@@ -30,6 +30,15 @@ async def get_segments(site: Optional[str] = None, allocated: Optional[bool] = N
     """Get segments with optional filters"""
     return await SegmentService.get_segments(site, allocated)
 
+@router.get("/segments/search")
+async def search_segments(
+    q: str, 
+    site: Optional[str] = None, 
+    allocated: Optional[bool] = None
+):
+    """Search segments by cluster name, EPG name, VLAN ID, description, or segment"""
+    return await SegmentService.search_segments(q, site, allocated)
+
 @router.post("/segments")
 async def create_segment(segment: SegmentCreate):
     """Create a new segment"""

@@ -24,19 +24,22 @@ class DatabaseUtils:
     
     @staticmethod
     async def find_and_allocate_segment(site: str, cluster_name: str) -> Optional[Dict[str, Any]]:
-        """Atomically find and allocate an available segment for a site"""
+        """Atomically find and allocate an available segment for a site
+        Only allocates /24 segments for clusters - preserves /21, /16, etc. for management
+        """
         segments_collection = get_segments_collection()
         allocation_time = datetime.utcnow()
         
         # Use findOneAndUpdate for atomic operation - prevents race conditions
         # Find segments that are either never allocated (released: False, cluster_name: None) 
         # OR have been released (released: True, cluster_name: None)
+        # Only select /24 segments for cluster allocation (management uses /21, /16, etc.)
         # Sort by vlan_id to always allocate the smallest available VLAN ID first
         result = await segments_collection.find_one_and_update(
             {
                 "site": site,
-                "cluster_name": None
-                # Remove released: False condition to allow reuse of released segments
+                "cluster_name": None,
+                "segment": {"$regex": r"/24$"}  # Only match segments ending with /24
             },
             {
                 "$set": {
@@ -53,11 +56,14 @@ class DatabaseUtils:
     
     @staticmethod
     async def find_available_segment(site: str) -> Optional[Dict[str, Any]]:
-        """Find an available segment for a site (kept for backward compatibility)"""
+        """Find an available segment for a site (kept for backward compatibility)
+        Only returns /24 segments for cluster allocation
+        """
         segments_collection = get_segments_collection()
         return await segments_collection.find_one({
             "site": site,
-            "cluster_name": None
+            "cluster_name": None,
+            "segment": {"$regex": r"/24$"}  # Only match segments ending with /24
             # Allow both released: False (never allocated) and released: True (previously released)
         })
     
@@ -201,3 +207,53 @@ class DatabaseUtils:
             "available": total_segments - allocated,
             "utilization": round((allocated / total_segments * 100) if total_segments > 0 else 0, 1)
         }
+    
+    @staticmethod
+    async def search_segments(
+        search_query: str, 
+        site: Optional[str] = None, 
+        allocated: Optional[bool] = None
+    ) -> List[Dict[str, Any]]:
+        """Search segments by cluster name, EPG name, or VLAN ID"""
+        segments_collection = get_segments_collection()
+        
+        # Build base query with optional filters
+        query = {}
+        if site:
+            query["site"] = site
+        if allocated is not None:
+            if allocated:
+                query["cluster_name"] = {"$ne": None}
+            else:
+                query["cluster_name"] = None
+        
+        # Add search conditions - search in multiple fields
+        search_conditions = []
+        
+        # Try to parse as VLAN ID (integer)
+        try:
+            vlan_id = int(search_query)
+            search_conditions.append({"vlan_id": vlan_id})
+        except ValueError:
+            pass  # Not a valid integer, skip VLAN ID search
+        
+        # Search in text fields (case-insensitive)
+        text_search = {"$regex": search_query, "$options": "i"}
+        search_conditions.extend([
+            {"cluster_name": text_search},
+            {"epg_name": text_search},
+            {"description": text_search},
+            {"segment": text_search}
+        ])
+        
+        # Combine search conditions with OR
+        if search_conditions:
+            query["$or"] = search_conditions
+        
+        segments = await segments_collection.find(query).sort("vlan_id", 1).to_list(None)
+        
+        # Convert ObjectId to string
+        for segment in segments:
+            segment["_id"] = str(segment["_id"])
+        
+        return segments

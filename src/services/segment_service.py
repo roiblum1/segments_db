@@ -24,6 +24,23 @@ class SegmentService:
             raise HTTPException(status_code=500, detail=str(e))
     
     @staticmethod
+    async def search_segments(
+        search_query: str, 
+        site: Optional[str] = None, 
+        allocated: Optional[bool] = None
+    ) -> List[Dict[str, Any]]:
+        """Search segments by cluster name, EPG name, VLAN ID, description, or segment"""
+        logger.info(f"Searching segments: query='{search_query}', site={site}, allocated={allocated}")
+        
+        try:
+            segments = await DatabaseUtils.search_segments(search_query, site, allocated)
+            logger.debug(f"Found {len(segments)} matching segments")
+            return segments
+        except Exception as e:
+            logger.error(f"Error searching segments: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+    
+    @staticmethod
     async def create_segment(segment: SegmentCreate) -> Dict[str, str]:
         """Create a new segment"""
         logger.info(f"Creating segment: site={segment.site}, vlan_id={segment.vlan_id}, epg={segment.epg_name}")

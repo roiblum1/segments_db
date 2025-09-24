@@ -1,6 +1,7 @@
 // Global state
 let currentFilter = 'all';
 let currentSite = '';
+let currentSearchQuery = '';
 let isOnline = true;
 let isDarkMode = localStorage.getItem('darkMode') === 'true';
 
@@ -20,6 +21,9 @@ window.exportData = async function exportData(format) {
         
         // Add current filter parameters
         const params = new URLSearchParams();
+        
+        // Note: Export doesn't support search filtering, only status and site filters
+        // This is because search is meant for interactive browsing, not data export
         if (currentFilter === 'available') {
             params.append('allocated', 'false');
         } else if (currentFilter === 'allocated') {
@@ -231,6 +235,12 @@ async function loadSegments() {
     try {
         let endpoint = '/segments';
         const params = new URLSearchParams();
+        
+        // If there's a search query, use search endpoint
+        if (currentSearchQuery.trim()) {
+            endpoint = '/segments/search';
+            params.append('q', currentSearchQuery.trim());
+        }
         
         if (currentFilter === 'available') {
             params.append('allocated', 'false');
@@ -478,6 +488,45 @@ document.addEventListener('DOMContentLoaded', function() {
     // Site filter
     document.getElementById('siteFilter').addEventListener('change', (e) => {
         currentSite = e.target.value;
+        loadSegments();
+    });
+    
+    // Search functionality
+    const searchInput = document.getElementById('searchInput');
+    const clearSearch = document.getElementById('clearSearch');
+    let searchTimeout;
+    
+    searchInput.addEventListener('input', (e) => {
+        const query = e.target.value;
+        
+        // Show/hide clear button
+        if (query.trim()) {
+            clearSearch.classList.add('visible');
+        } else {
+            clearSearch.classList.remove('visible');
+        }
+        
+        // Debounce search to avoid too many API calls
+        clearTimeout(searchTimeout);
+        searchTimeout = setTimeout(() => {
+            currentSearchQuery = query;
+            loadSegments();
+        }, 300); // Wait 300ms after user stops typing
+    });
+    
+    searchInput.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            clearTimeout(searchTimeout);
+            currentSearchQuery = e.target.value;
+            loadSegments();
+        }
+    });
+    
+    clearSearch.addEventListener('click', () => {
+        searchInput.value = '';
+        currentSearchQuery = '';
+        clearSearch.classList.remove('visible');
         loadSegments();
     });
     

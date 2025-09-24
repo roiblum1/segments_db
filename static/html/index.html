@@ -95,6 +95,10 @@ site2,200,EPG_DEV_01,10.0.1.0/24,Development segment"></textarea>
                 </div>
             </div>
             <div class="filters">
+                <div class="search-container">
+                    <input type="text" id="searchInput" placeholder="Search by cluster name, EPG, VLAN ID, or segment..." class="search-input">
+                    <button id="clearSearch" class="clear-search" title="Clear search">✕</button>
+                </div>
                 <div class="status-tabs">
                     <div class="tab active" data-filter="all">All</div>
                     <div class="tab" data-filter="available">Available</div>
