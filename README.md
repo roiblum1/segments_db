@@ -1,6 +1,12 @@
 # 🌐 VLAN Segment Manager
 
-A modern, containerized VLAN segment management system built with FastAPI and MongoDB. Features a responsive web UI with dark mode, RESTful API, and deployment options for both air-gapped environments and Kubernetes/OpenShift.
+![Docker Build](https://github.com/Roi12345/vlan-manager/workflows/Build%20and%20Push%20Docker%20Image/badge.svg)
+![Tests](https://github.com/Roi12345/vlan-manager/workflows/Test%20and%20Validate/badge.svg)
+![Local Build](https://github.com/Roi12345/vlan-manager/workflows/Build%20Local%20Podman%20Images/badge.svg)
+![License](https://img.shields.io/badge/license-MIT-blue.svg)
+![Version](https://img.shields.io/badge/version-v2.4.0-green.svg)
+
+A modern, containerized VLAN segment management system built with FastAPI and MongoDB. Features a responsive web UI with dark mode, RESTful API, automated CI/CD pipeline, and deployment options for both air-gapped environments and Kubernetes/OpenShift.
 
 ## ✨ Features
 
@@ -17,6 +23,7 @@ A modern, containerized VLAN segment management system built with FastAPI and Mo
 - 🐳 **Container Ready**: Docker/Podman deployment with health checks
 - ☸️ **Kubernetes/OpenShift**: Complete Helm chart included
 - 🔒 **Air-Gapped Deployment**: Podman save/load workflow for isolated networks
+- 🚀 **CI/CD Pipeline**: Automated Docker builds with version management and artifact generation
 
 ## 🏗️ Architecture
 
@@ -161,6 +168,60 @@ The application automatically creates comprehensive database indexes on startup 
 **Timestamp Indexes:**
 - `(allocated_at)` - Allocation time queries
 - `(released_at)` - Release time queries
+
+## 🚀 CI/CD Pipeline
+
+This project includes a comprehensive GitHub Actions CI/CD pipeline that automatically builds and distributes container images.
+
+### 🔄 Automated Workflows
+
+- **Docker Build Pipeline**: Auto-incremental versioning with Docker Hub publishing
+- **Local Podman Build**: Creates downloadable Podman image artifacts  
+- **Test & Validation**: Python linting, type checking, and container testing
+- **Release Pipeline**: Multi-registry publishing for tagged releases
+
+### 📦 Image Distribution
+
+**Docker Hub Images** (automatically published):
+```bash
+# Pull latest version
+docker pull roi12345/vlan-manager:latest
+
+# Pull specific version
+docker pull roi12345/vlan-manager:v2.4.0
+```
+
+**Podman Archive Images** (GitHub Actions artifacts):
+- Download from Actions tab → "Build Local Podman Images" 
+- Extract and run: `./deploy.sh`
+- Perfect for air-gapped deployments
+
+### 🏷️ Version Strategy
+
+- **Main branch pushes**: Auto-increment patch version (v1.0.0 → v1.0.1)
+- **Develop branch**: Beta versions (v1.0.1-beta.1) 
+- **Feature branches**: Branch-specific builds (branch-feature-name-{commit})
+- **Releases**: Use tagged version (v2.0.0)
+
+### ⚙️ Setup Instructions
+
+1. **Configure GitHub Secrets** (Repository Settings → Secrets):
+   ```
+   DOCKER_USERNAME: Roi12345
+   DOCKER_PASSWORD: [your-dockerhub-access-token]
+   ```
+
+2. **Run the setup script**:
+   ```bash
+   ./setup-pipeline.sh
+   ```
+
+3. **Push to trigger builds**:
+   ```bash
+   git push origin main  # Triggers auto-versioned build
+   ```
+
+See [CI-CD-README.md](CI-CD-README.md) for complete pipeline documentation.
 
 ## 🐳 Container Deployment
 

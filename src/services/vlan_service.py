@@ -43,10 +43,10 @@ class VLANService:
             )
             
             if not allocated_segment:
-                logger.error(f"No available /24 segments for site: {request.site}")
+                logger.error(f"No available segments for site: {request.site}")
                 raise HTTPException(
                     status_code=503, 
-                    detail=f"No available /24 segments for cluster allocation at site: {request.site}. Only /24 subnets can be allocated to clusters."
+                    detail=f"No available segments for site: {request.site}"
                 )
             
             logger.info(f"Allocated VLAN {allocated_segment['vlan_id']} (EPG: {allocated_segment['epg_name']}) to {request.cluster_name}")

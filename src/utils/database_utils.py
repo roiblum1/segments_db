@@ -14,18 +14,32 @@ class DatabaseUtils:
     
     @staticmethod
     async def find_existing_allocation(cluster_name: str, site: str) -> Optional[Dict[str, Any]]:
-        """Find existing allocation for a cluster at a site"""
+        """Find existing allocation for a cluster at a site
+        Supports both single clusters and shared segments (comma-separated)
+        """
         segments_collection = get_segments_collection()
-        return await segments_collection.find_one({
+        
+        # Check for exact match first (single cluster or comma-separated list including this cluster)
+        exact_match = await segments_collection.find_one({
             "cluster_name": cluster_name,
             "site": site,
             "released": False
         })
+        if exact_match:
+            return exact_match
+        
+        # Check for shared segments where this cluster is part of a comma-separated list
+        shared_match = await segments_collection.find_one({
+            "cluster_name": {"$regex": f"(^|,){cluster_name}(,|$)"},
+            "site": site,
+            "released": False
+        })
+        return shared_match
     
     @staticmethod
     async def find_and_allocate_segment(site: str, cluster_name: str) -> Optional[Dict[str, Any]]:
         """Atomically find and allocate an available segment for a site
-        Only allocates /24 segments for clusters - preserves /21, /16, etc. for management
+        Supports all subnet sizes (/24, /21, /16, etc.) for cluster allocation
         """
         segments_collection = get_segments_collection()
         allocation_time = datetime.utcnow()
@@ -33,13 +47,12 @@ class DatabaseUtils:
         # Use findOneAndUpdate for atomic operation - prevents race conditions
         # Find segments that are either never allocated (released: False, cluster_name: None) 
         # OR have been released (released: True, cluster_name: None)
-        # Only select /24 segments for cluster allocation (management uses /21, /16, etc.)
         # Sort by vlan_id to always allocate the smallest available VLAN ID first
         result = await segments_collection.find_one_and_update(
             {
                 "site": site,
-                "cluster_name": None,
-                "segment": {"$regex": r"/24$"}  # Only match segments ending with /24
+                "cluster_name": None
+                # Remove subnet size restriction - allow all sizes
             },
             {
                 "$set": {
@@ -57,14 +70,14 @@ class DatabaseUtils:
     @staticmethod
     async def find_available_segment(site: str) -> Optional[Dict[str, Any]]:
         """Find an available segment for a site (kept for backward compatibility)
-        Only returns /24 segments for cluster allocation
+        Returns any available segment regardless of subnet size
         """
         segments_collection = get_segments_collection()
         return await segments_collection.find_one({
             "site": site,
-            "cluster_name": None,
-            "segment": {"$regex": r"/24$"}  # Only match segments ending with /24
+            "cluster_name": None
             # Allow both released: False (never allocated) and released: True (previously released)
+            # Support all subnet sizes
         })
     
     @staticmethod
@@ -88,24 +101,68 @@ class DatabaseUtils:
     
     @staticmethod
     async def release_segment(cluster_name: str, site: str) -> bool:
-        """Release a segment allocation"""
+        """Release a segment allocation
+        For shared segments, removes only the specified cluster from the list
+        """
         segments_collection = get_segments_collection()
         
-        result = await segments_collection.update_one(
-            {
-                "cluster_name": cluster_name,
-                "site": site,
-                "released": False
-            },
-            {
-                "$set": {
-                    "cluster_name": None,
-                    "released": True,
-                    "released_at": datetime.utcnow()
+        # First find the segment to check if it's shared
+        segment = await segments_collection.find_one({
+            "cluster_name": {"$regex": f"(^|,){cluster_name}(,|$)"},
+            "site": site,
+            "released": False
+        })
+        
+        if not segment:
+            return False
+        
+        current_clusters = segment["cluster_name"]
+        
+        # If it's an exact match (single cluster), release normally
+        if current_clusters == cluster_name:
+            result = await segments_collection.update_one(
+                {"_id": segment["_id"]},
+                {
+                    "$set": {
+                        "cluster_name": None,
+                        "released": True,
+                        "released_at": datetime.utcnow()
+                    }
                 }
-            }
-        )
-        return result.modified_count > 0
+            )
+            return result.modified_count > 0
+        
+        # If it's a shared segment, remove only this cluster
+        cluster_list = [c.strip() for c in current_clusters.split(",")]
+        if cluster_name in cluster_list:
+            cluster_list.remove(cluster_name)
+            
+            if len(cluster_list) == 0:
+                # No clusters left, release the segment
+                result = await segments_collection.update_one(
+                    {"_id": segment["_id"]},
+                    {
+                        "$set": {
+                            "cluster_name": None,
+                            "released": True,
+                            "released_at": datetime.utcnow()
+                        }
+                    }
+                )
+            else:
+                # Update with remaining clusters
+                new_cluster_names = ",".join(cluster_list)
+                result = await segments_collection.update_one(
+                    {"_id": segment["_id"]},
+                    {
+                        "$set": {
+                            "cluster_name": new_cluster_names
+                        }
+                    }
+                )
+            return result.modified_count > 0
+        
+        return False
     
     @staticmethod
     async def get_segments_with_filters(site: Optional[str] = None, allocated: Optional[bool] = None) -> List[Dict[str, Any]]:
@@ -137,6 +194,19 @@ class DatabaseUtils:
         existing = await segments_collection.find_one({
             "site": site,
             "vlan_id": vlan_id
+        })
+        return existing is not None
+    
+    @staticmethod
+    async def check_vlan_exists_excluding_id(site: str, vlan_id: int, exclude_id: str) -> bool:
+        """Check if VLAN ID already exists for a site, excluding a specific segment ID"""
+        from bson import ObjectId
+        segments_collection = get_segments_collection()
+        
+        existing = await segments_collection.find_one({
+            "site": site,
+            "vlan_id": vlan_id,
+            "_id": {"$ne": ObjectId(exclude_id)}
         })
         return existing is not None
     

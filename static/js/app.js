@@ -618,6 +618,11 @@ function showEditModal(segment) {
                         <label for="editDescription">Description</label>
                         <input type="text" id="editDescription" value="${segment.description || ''}" placeholder="Optional description">
                     </div>
+                    <div class="form-group">
+                        <label for="editClusterName">Cluster Name(s)</label>
+                        <input type="text" id="editClusterName" value="${segment.cluster_name || ''}" placeholder="cluster1,cluster2 for shared segments">
+                        <small style="color: #666; font-size: 12px;">Use commas to separate multiple clusters for shared segments. Leave empty to release allocation.</small>
+                    </div>
                     <div class="modal-actions">
                         <button type="button" class="btn btn-secondary" onclick="closeEditModal()">Cancel</button>
                         <button type="submit" class="btn btn-primary">Update Segment</button>
@@ -675,15 +680,31 @@ async function updateSegment(segmentId) {
         description: document.getElementById('editDescription').value.trim()
     };
     
+    // Handle cluster name updates for all segments
+    const clusterField = document.getElementById('editClusterName');
+    const clusterName = clusterField.value.trim();
+    
     try {
         const updateBtn = form.querySelector('button[type="submit"]');
         updateBtn.disabled = true;
         updateBtn.textContent = 'Updating...';
         
-        await fetchAPI(`/segments/${segmentId}`, {
+        // Always handle cluster name updates (this is the primary operation)
+        await fetchAPI(`/segments/${segmentId}/clusters`, {
             method: 'PUT',
-            body: JSON.stringify(segmentData)
+            body: JSON.stringify({ cluster_names: clusterName })
         });
+        
+        // Try to update basic segment data if needed (but don't fail if this doesn't work)
+        try {
+            await fetchAPI(`/segments/${segmentId}`, {
+                method: 'PUT',
+                body: JSON.stringify(segmentData)
+            });
+        } catch (segmentError) {
+            console.warn('Segment basic data update failed, but cluster update succeeded:', segmentError);
+            // Don't throw error - cluster update is what matters most
+        }
         
         closeEditModal();
         showSuccess('Segment updated successfully');

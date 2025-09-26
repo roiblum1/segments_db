@@ -1,0 +1,304 @@
+name: Build Local Podman Images
+
+on:
+  push:
+    branches: [ main, develop ]
+  workflow_dispatch:
+    inputs:
+      custom_version:
+        description: 'Custom version tag'
+        required: false
+        default: ''
+
+env:
+  IMAGE_NAME: vlan-manager
+  LOCAL_REGISTRY: localhost
+
+jobs:
+  build-local:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Install Podman
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y podman
+
+    - name: Generate version and metadata
+      id: meta
+      run: |
+        # Get build metadata
+        BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+        SHORT_SHA=${GITHUB_SHA::8}
+        
+        # Determine version
+        if [[ -n "${{ github.event.inputs.custom_version }}" ]]; then
+          VERSION="${{ github.event.inputs.custom_version }}"
+        elif [[ "${{ github.ref }}" == "refs/heads/main" ]]; then
+          # Auto-increment version for main branch
+          LATEST_TAG=$(git tag -l "v*.*.*" | sort -V | tail -n1)
+          if [[ -z "$LATEST_TAG" ]]; then
+            VERSION="v1.0.0"
+          else
+            LATEST_TAG_CLEAN=${LATEST_TAG#v}
+            IFS='.' read -ra VERSION_PARTS <<< "$LATEST_TAG_CLEAN"
+            MAJOR=${VERSION_PARTS[0]}
+            MINOR=${VERSION_PARTS[1]}
+            PATCH=$((${VERSION_PARTS[2]} + 1))
+            VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+          fi
+        elif [[ "${{ github.ref }}" == "refs/heads/develop" ]]; then
+          VERSION="develop-${SHORT_SHA}"
+        else
+          BRANCH_NAME=${GITHUB_REF#refs/heads/}
+          BRANCH_NAME_CLEAN=$(echo "$BRANCH_NAME" | sed 's/[^a-zA-Z0-9]/-/g' | tr '[:upper:]' '[:lower:]')
+          VERSION="branch-${BRANCH_NAME_CLEAN}-${SHORT_SHA}"
+        fi
+        
+        echo "version=${VERSION}" >> $GITHUB_OUTPUT
+        echo "build-date=${BUILD_DATE}" >> $GITHUB_OUTPUT
+        echo "short-sha=${SHORT_SHA}" >> $GITHUB_OUTPUT
+        
+        echo "Generated version: $VERSION"
+        echo "Build date: $BUILD_DATE"
+        echo "Commit SHA: $SHORT_SHA"
+
+    - name: Build Podman image
+      run: |
+        # Build the image with version metadata
+        podman build \
+          --build-arg VERSION=${{ steps.meta.outputs.version }} \
+          --build-arg BUILD_DATE=${{ steps.meta.outputs.build-date }} \
+          --build-arg COMMIT_SHA=${{ steps.meta.outputs.short-sha }} \
+          -t ${{ env.LOCAL_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }} \
+          -t ${{ env.LOCAL_REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
+          .
+        
+        echo "✅ Podman image built successfully!"
+
+    - name: Test Podman image
+      run: |
+        # Start container for testing
+        podman run -d --name vlan-test -p 8000:8000 \
+          ${{ env.LOCAL_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+        
+        # Wait for startup
+        sleep 15
+        
+        # Test health endpoint
+        curl -f http://localhost:8000/api/health || exit 1
+        
+        # Test API endpoints
+        curl -f http://localhost:8000/api/sites || exit 1
+        curl -f http://localhost:8000/api/stats || exit 1
+        
+        # Stop and remove test container
+        podman stop vlan-test
+        podman rm vlan-test
+        
+        echo "✅ Image tests passed!"
+
+    - name: Save image to tar archive
+      run: |
+        # Create export directory
+        mkdir -p podman-images
+        
+        # Save image to tar file
+        IMAGE_FILE="podman-images/vlan-manager-${{ steps.meta.outputs.version }}.tar"
+        podman save ${{ env.LOCAL_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }} \
+          -o "$IMAGE_FILE"
+        
+        # Compress the tar file
+        gzip "$IMAGE_FILE"
+        
+        # Create latest symlink
+        ln -sf "vlan-manager-${{ steps.meta.outputs.version }}.tar.gz" \
+          "podman-images/vlan-manager-latest.tar.gz"
+        
+        echo "✅ Image saved to: ${IMAGE_FILE}.gz"
+
+    - name: Generate image manifest
+      run: |
+        # Create manifest with image information
+        cat > podman-images/manifest.json << EOF
+        {
+          "version": "${{ steps.meta.outputs.version }}",
+          "build_date": "${{ steps.meta.outputs.build-date }}",
+          "commit_sha": "${{ steps.meta.outputs.short-sha }}",
+          "branch": "${{ github.ref_name }}",
+          "image_file": "vlan-manager-${{ steps.meta.outputs.version }}.tar.gz",
+          "tags": [
+            "${{ env.LOCAL_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}",
+            "${{ env.LOCAL_REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+          ],
+          "size_bytes": $(stat -c%s "podman-images/vlan-manager-${{ steps.meta.outputs.version }}.tar.gz"),
+          "load_command": "podman load -i vlan-manager-${{ steps.meta.outputs.version }}.tar.gz",
+          "run_command": "podman run -d -p 8000:8000 --name vlan-manager ${{ env.LOCAL_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}"
+        }
+        EOF
+        
+        # Create deployment script
+        cat > podman-images/deploy.sh << 'EOF'
+        #!/bin/bash
+        set -e
+        
+        VERSION="${{ steps.meta.outputs.version }}"
+        IMAGE_FILE="vlan-manager-${VERSION}.tar.gz"
+        IMAGE_NAME="${{ env.LOCAL_REGISTRY }}/${{ env.IMAGE_NAME }}"
+        
+        echo "🐳 Loading VLAN Manager $VERSION"
+        
+        if [[ ! -f "$IMAGE_FILE" ]]; then
+          echo "❌ Image file $IMAGE_FILE not found!"
+          exit 1
+        fi
+        
+        # Load image
+        echo "📦 Loading image from $IMAGE_FILE..."
+        podman load -i "$IMAGE_FILE"
+        
+        # Stop existing container if running
+        if podman ps -q --filter name=vlan-manager | grep -q .; then
+          echo "🛑 Stopping existing container..."
+          podman stop vlan-manager
+          podman rm vlan-manager
+        fi
+        
+        # Start new container
+        echo "🚀 Starting VLAN Manager..."
+        podman run -d \
+          --name vlan-manager \
+          -p 8000:8000 \
+          --restart unless-stopped \
+          "${IMAGE_NAME}:${VERSION}"
+        
+        # Wait and test
+        echo "⏳ Waiting for startup..."
+        sleep 10
+        
+        if curl -f http://localhost:8000/api/health &>/dev/null; then
+          echo "✅ VLAN Manager is running successfully!"
+          echo "🌐 Web interface: http://localhost:8000"
+          echo "📚 Documentation: http://localhost:8000/static/html/help.html"
+        else
+          echo "❌ Health check failed!"
+          exit 1
+        fi
+        EOF
+        
+        chmod +x podman-images/deploy.sh
+
+    - name: Create README for podman images
+      run: |
+        cat > podman-images/README.md << 'EOF'
+        # VLAN Manager Podman Images
+        
+        This directory contains pre-built Podman images for the VLAN Manager application.
+        
+        ## Quick Start
+        
+        ```bash
+        # Make sure you're in the podman-images directory
+        cd podman-images
+        
+        # Run the deployment script
+        ./deploy.sh
+        ```
+        
+        ## Manual Deployment
+        
+        ```bash
+        # Load the image
+        podman load -i vlan-manager-${{ steps.meta.outputs.version }}.tar.gz
+        
+        # Run the container
+        podman run -d \
+          --name vlan-manager \
+          -p 8000:8000 \
+          --restart unless-stopped \
+          ${{ env.LOCAL_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+        ```
+        
+        ## Image Information
+        
+        - **Version:** ${{ steps.meta.outputs.version }}
+        - **Build Date:** ${{ steps.meta.outputs.build-date }}
+        - **Commit:** ${{ steps.meta.outputs.short-sha }}
+        - **Branch:** ${{ github.ref_name }}
+        
+        ## Available Files
+        
+        - `vlan-manager-${{ steps.meta.outputs.version }}.tar.gz` - Compressed image archive
+        - `vlan-manager-latest.tar.gz` - Symlink to latest version
+        - `manifest.json` - Image metadata and information
+        - `deploy.sh` - Automated deployment script
+        - `README.md` - This file
+        
+        ## Configuration
+        
+        The container can be configured with environment variables:
+        
+        ```bash
+        podman run -d \
+          --name vlan-manager \
+          -p 8000:8000 \
+          -e MONGODB_URL="your-mongodb-connection" \
+          -e DATABASE_NAME="vlan_manager" \
+          -e SITES="site1,site2,site3" \
+          -e SITE_PREFIXES="site1:192,site2:193,site3:194" \
+          ${{ env.LOCAL_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.version }}
+        ```
+        
+        ## Health Check
+        
+        ```bash
+        curl http://localhost:8000/api/health
+        ```
+        
+        ## Web Interface
+        
+        After deployment, access the application at:
+        - Main interface: http://localhost:8000
+        - Documentation: http://localhost:8000/static/html/help.html
+        EOF
+
+    - name: Upload podman images as artifacts
+      uses: actions/upload-artifact@v3
+      with:
+        name: podman-images-${{ steps.meta.outputs.version }}
+        path: podman-images/
+        retention-days: 30
+
+    - name: Create release summary
+      run: |
+        echo "## 🐳 Podman Image Build Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Property | Value |" >> $GITHUB_STEP_SUMMARY
+        echo "|----------|--------|" >> $GITHUB_STEP_SUMMARY
+        echo "| **Version** | \`${{ steps.meta.outputs.version }}\` |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Build Date** | ${{ steps.meta.outputs.build-date }} |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Commit** | \`${{ steps.meta.outputs.short-sha }}\` |" >> $GITHUB_STEP_SUMMARY
+        echo "| **Branch** | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
+        
+        IMAGE_SIZE=$(du -h "podman-images/vlan-manager-${{ steps.meta.outputs.version }}.tar.gz" | cut -f1)
+        echo "| **Image Size** | $IMAGE_SIZE |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📦 Download" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "The Podman image has been saved as a GitHub Actions artifact." >> $GITHUB_STEP_SUMMARY
+        echo "Download it from the Actions tab and extract to your server." >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🚀 Deploy" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`bash" >> $GITHUB_STEP_SUMMARY
+        echo "# Extract the artifact" >> $GITHUB_STEP_SUMMARY
+        echo "cd podman-images" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "# Run the deployment script" >> $GITHUB_STEP_SUMMARY
+        echo "./deploy.sh" >> $GITHUB_STEP_SUMMARY
+        echo "\`\`\`" >> $GITHUB_STEP_SUMMARY

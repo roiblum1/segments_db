@@ -125,7 +125,7 @@ class SegmentService:
             # Check if VLAN ID change would conflict (only if changing VLAN ID or site)
             if (existing_segment["vlan_id"] != updated_segment.vlan_id or 
                 existing_segment["site"] != updated_segment.site):
-                if await DatabaseUtils.check_vlan_exists(updated_segment.site, updated_segment.vlan_id):
+                if await DatabaseUtils.check_vlan_exists_excluding_id(updated_segment.site, updated_segment.vlan_id, segment_id):
                     logger.warning(f"VLAN {updated_segment.vlan_id} already exists for site {updated_segment.site}")
                     raise HTTPException(
                         status_code=400, 
@@ -151,6 +151,65 @@ class SegmentService:
             raise
         except Exception as e:
             logger.error(f"Error updating segment: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @staticmethod
+    async def update_segment_clusters(segment_id: str, cluster_names: str) -> Dict[str, str]:
+        """Update cluster assignment for a segment (for shared segments)"""
+        from datetime import datetime
+        logger.info(f"Updating cluster assignment for segment: {segment_id}")
+        
+        try:
+            # Validate ObjectId format
+            Validators.validate_object_id(segment_id)
+            
+            # Check if segment exists
+            existing_segment = await DatabaseUtils.get_segment_by_id(segment_id)
+            if not existing_segment:
+                logger.warning(f"Segment not found: {segment_id}")
+                raise HTTPException(status_code=404, detail="Segment not found")
+            
+            # Clean up cluster names
+            clean_cluster_names = cluster_names.strip() if cluster_names else None
+            
+            # Update the segment cluster assignment
+            update_data = {}
+            if clean_cluster_names:
+                # Validate cluster names format (comma-separated, no special chars)
+                cluster_list = [name.strip() for name in clean_cluster_names.split(",")]
+                validated_clusters = []
+                for cluster in cluster_list:
+                    if cluster and cluster.replace("-", "").replace("_", "").isalnum():
+                        validated_clusters.append(cluster)
+                
+                if validated_clusters:
+                    update_data["cluster_name"] = ",".join(validated_clusters)
+                    update_data["allocated_at"] = datetime.utcnow()
+                    update_data["released"] = False
+                    update_data["released_at"] = None
+                else:
+                    # No valid clusters, release the segment
+                    update_data["cluster_name"] = None
+                    update_data["released"] = True
+                    update_data["released_at"] = datetime.utcnow()
+            else:
+                # Empty cluster names, release the segment
+                update_data["cluster_name"] = None
+                update_data["released"] = True
+                update_data["released_at"] = datetime.utcnow()
+            
+            success = await DatabaseUtils.update_segment_by_id(segment_id, update_data)
+            
+            if not success:
+                raise HTTPException(status_code=500, detail="Failed to update segment clusters")
+            
+            logger.info(f"Updated cluster assignment for segment {segment_id}")
+            return {"message": "Segment cluster assignment updated successfully"}
+            
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error updating segment clusters: {e}")
             raise HTTPException(status_code=500, detail=str(e))
 
     @staticmethod

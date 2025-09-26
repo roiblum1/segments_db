@@ -54,6 +54,12 @@ async def update_segment(segment_id: str, segment: SegmentCreate):
     """Update a segment"""
     return await SegmentService.update_segment(segment_id, segment)
 
+@router.put("/segments/{segment_id}/clusters")
+async def update_segment_clusters(segment_id: str, request: dict):
+    """Update cluster assignment for a segment (for shared segments)"""
+    cluster_names = request.get("cluster_names", "")
+    return await SegmentService.update_segment_clusters(segment_id, cluster_names)
+
 @router.delete("/segments/{segment_id}")
 async def delete_segment(segment_id: str):
     """Delete a segment"""
