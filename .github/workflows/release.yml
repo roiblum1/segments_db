@@ -148,7 +148,7 @@ EOF
         tar -czf vlan-manager-${{ github.event.release.tag_name }}.tar.gz -C release-package .
 
     - name: Upload release assets
-      uses: actions/upload-release-asset@v1
+      uses: actions/upload-release-asset@v1.0.2
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
@@ -158,7 +158,7 @@ EOF
         asset_content_type: application/gzip
 
     - name: Update release description
-      uses: actions/github-script@v6
+      uses: actions/github-script@v7
       with:
         script: |
           const { data: release } = await github.rest.repos.getRelease({

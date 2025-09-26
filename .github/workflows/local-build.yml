@@ -268,7 +268,7 @@ jobs:
         EOF
 
     - name: Upload podman images as artifacts
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: podman-images-${{ steps.meta.outputs.version }}
         path: podman-images/
