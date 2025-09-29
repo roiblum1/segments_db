@@ -5,7 +5,7 @@ from ..models.schemas import (
     VLANAllocationRequest, VLANAllocationResponse, 
     VLANRelease, Segment
 )
-from ..services.vlan_service import VLANService
+from ..services.allocation_service import AllocationService
 from ..services.segment_service import SegmentService
 from ..services.stats_service import StatsService
 from ..services.logs_service import LogsService
@@ -17,12 +17,12 @@ router = APIRouter()
 @router.post("/allocate-vlan", response_model=VLANAllocationResponse)
 async def allocate_vlan(request: VLANAllocationRequest):
     """Allocate a VLAN segment for a cluster"""
-    return await VLANService.allocate_vlan(request)
+    return await AllocationService.allocate_vlan(request)
 
 @router.post("/release-vlan")
 async def release_vlan(request: VLANRelease):
     """Release a VLAN segment allocation"""
-    return await VLANService.release_vlan(request.cluster_name, request.site)
+    return await AllocationService.release_vlan(request.cluster_name, request.site)
 
 # Segment Management Routes
 @router.get("/segments")

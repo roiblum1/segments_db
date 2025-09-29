@@ -9,8 +9,8 @@ from ..utils.validators import Validators
 
 logger = logging.getLogger(__name__)
 
-class VLANService:
-    """Service class for VLAN allocation operations"""
+class AllocationService:
+    """Service class for segment allocation operations"""
     
     @staticmethod
     async def allocate_vlan(request: VLANAllocationRequest) -> VLANAllocationResponse:
