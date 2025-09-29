@@ -4,26 +4,29 @@
 ![Tests](https://github.com/Roi12345/vlan-manager/workflows/Test%20and%20Validate/badge.svg)
 ![Local Build](https://github.com/Roi12345/vlan-manager/workflows/Build%20Local%20Podman%20Images/badge.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Version](https://img.shields.io/badge/version-v2.4.0-green.svg)
+![Version](https://img.shields.io/badge/version-v1.0.10-green.svg)
 
-A modern, containerized VLAN segment management system built with FastAPI and MongoDB. Features a responsive web UI with dark mode, RESTful API, automated CI/CD pipeline, and deployment options for both air-gapped environments and Kubernetes/OpenShift.
+A modern, containerized VLAN segment management system built with FastAPI and MongoDB. Features a responsive web UI with dark mode, RESTful API, automated CI/CD pipeline, comprehensive validation, enhanced health monitoring, and deployment options for both air-gapped environments and Kubernetes/OpenShift.
 
 ## ✨ Features
 
 - 🔧 **VLAN Management**: Allocate and release VLAN segments for clusters
 - 🏢 **Multi-Site Support**: Manage VLANs across multiple sites
-- 🛡️ **Site IP Validation**: Automatic validation of IP prefixes per site (configurable)
-- 🌐 **Web Interface**: Modern, responsive UI with dark/light mode toggle
+- 🛡️ **Comprehensive Validation**: EPG name validation, IP format validation, and site prefix enforcement
+- 🌐 **Web Interface**: Modern, responsive UI with dark/light mode toggle and proper error handling
 - 🔍 **Advanced Filtering**: Filter segments by site and allocation status
 - 📊 **Export Capabilities**: CSV/Excel export with filtering support  
 - 🚀 **RESTful API**: Complete API for automation and integration
-- 📈 **Real-time Statistics**: Site utilization and availability metrics
-- 📋 **Bulk Operations**: CSV import for mass segment creation
+- 📈 **Enhanced Health Monitoring**: Comprehensive health checks with site statistics and database operations testing
+- 📋 **Bulk Operations**: CSV import for mass segment creation with individual validation
 - 📁 **Log Viewing**: Built-in log file viewer via web interface
-- 🐳 **Container Ready**: Docker/Podman deployment with health checks
+- 🐳 **Container Ready**: Docker/Podman deployment with health checks and startup validation
 - ☸️ **Kubernetes/OpenShift**: Complete Helm chart included
 - 🔒 **Air-Gapped Deployment**: Podman save/load workflow for isolated networks
 - 🚀 **CI/CD Pipeline**: Automated Docker builds with version management and artifact generation
+- ⚡ **Startup Validation**: Fail-fast configuration validation prevents runtime errors
+- 🔧 **Error Handling**: Clear error messages and proper conflict detection
+- 🏗️ **Clean Architecture**: Centralized validation with DRY principles and maintainable code structure
 
 ## 🏗️ Architecture
 
@@ -109,7 +112,7 @@ Access the application at **http://localhost:8000**
 - **Responsive Design**: Works on desktop, tablet, and mobile
 
 ### API Endpoints:
-- `GET /api/health` - Health check and status
+- `GET /api/health` - Enhanced health check with comprehensive system monitoring
 - `GET /api/sites` - List configured sites
 - `GET /api/stats` - Site statistics and utilization
 - `GET /api/segments` - List segments with optional filters (`site`, `allocated`)
@@ -143,12 +146,28 @@ SERVER_HOST="0.0.0.0"
 SERVER_PORT="8000"
 ```
 
-### Site IP Validation
+### Site IP Validation & Startup Configuration
 Configure which IP address ranges are valid for each site:
 - **Format**: `"site1:192,site2:193,site3:194"`
-- **Default**: Sites default to 192 prefix if not specified
+- **Required**: All configured sites MUST have corresponding IP prefixes
 - **Validation**: Ensures segment IPs match site-specific prefixes
 - **Example**: site1 only accepts `192.x.x.x/xx`, site2 only accepts `193.x.x.x/xx`
+
+**⚠️ Critical Startup Validation:**
+The application performs strict configuration validation at startup:
+- **Fails immediately** if any site lacks an IP prefix
+- **Clear error messages** with configuration guidance
+- **Prevents runtime issues** by enforcing complete configuration
+
+```bash
+# ❌ This will crash the application:
+SITES="site1,site2,site3,site4"
+SITE_PREFIXES="site1:192,site2:193,site3:194"  # site4 missing!
+
+# ✅ Correct configuration:
+SITES="site1,site2,site3,site4"
+SITE_PREFIXES="site1:192,site2:193,site3:194,site4:195"
+```
 
 ### MongoDB Setup
 The application automatically creates comprehensive database indexes on startup for optimal performance:
@@ -243,12 +262,39 @@ podman run -d \
   vlan-manager
 ```
 
-### Health Checks
-Container includes built-in health checks:
+### Enhanced Health Monitoring
+Container includes comprehensive health checks:
 - **Endpoint**: `GET /api/health`
+- **Features**: 
+  - Database connectivity testing
+  - Per-site segment statistics
+  - Query operation validation
+  - System-wide metrics and averages
+  - Timestamp tracking
 - **Interval**: Every 30 seconds
-- **Timeout**: 10 seconds
+- **Timeout**: 10 seconds  
 - **Start Period**: 60 seconds
+
+**Sample Health Response:**
+```json
+{
+  "status": "healthy",
+  "timestamp": "2025-09-29T20:39:36.634379",
+  "database": "connected",
+  "total_segments": 36,
+  "sites_summary": {
+    "site1": {"total": 23, "allocated": 11, "available": 12, "utilization": 47.8},
+    "site2": {"total": 7, "allocated": 3, "available": 4, "utilization": 42.9},
+    "site3": {"total": 6, "allocated": 3, "available": 3, "utilization": 50.0}
+  },
+  "database_operations": "working",
+  "system_summary": {
+    "configured_sites": 3,
+    "total_segments": 36,
+    "average_segments_per_site": 12.0
+  }
+}
+```
 
 ## 🔒 Air-Gapped Deployment
 
