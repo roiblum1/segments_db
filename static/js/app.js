@@ -695,16 +695,11 @@ async function updateSegment(segmentId) {
             body: JSON.stringify({ cluster_names: clusterName })
         });
         
-        // Try to update basic segment data if needed (but don't fail if this doesn't work)
-        try {
-            await fetchAPI(`/segments/${segmentId}`, {
-                method: 'PUT',
-                body: JSON.stringify(segmentData)
-            });
-        } catch (segmentError) {
-            console.warn('Segment basic data update failed, but cluster update succeeded:', segmentError);
-            // Don't throw error - cluster update is what matters most
-        }
+        // Update basic segment data (this is the primary operation for most edits)
+        await fetchAPI(`/segments/${segmentId}`, {
+            method: 'PUT',
+            body: JSON.stringify(segmentData)
+        });
         
         closeEditModal();
         showSuccess('Segment updated successfully');
