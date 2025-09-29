@@ -1,7 +1,6 @@
-from typing import Optional, List
+from typing import Optional
 from datetime import datetime
-from pydantic import BaseModel, Field, validator
-import ipaddress
+from pydantic import BaseModel, Field
 
 class Segment(BaseModel):
     site: str

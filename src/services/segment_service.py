@@ -5,12 +5,29 @@ from fastapi import HTTPException
 from ..models.schemas import Segment
 from ..utils.database_utils import DatabaseUtils
 from ..utils.validators import Validators
-from ..config.settings import SITES
 
 logger = logging.getLogger(__name__)
 
 class SegmentService:
     """Service class for segment management operations"""
+    
+    @staticmethod
+    def _validate_segment_data(segment: Segment) -> None:
+        """Common validation for segment data"""
+        Validators.validate_site(segment.site)
+        Validators.validate_epg_name(segment.epg_name)
+        Validators.validate_segment_format(segment.segment, segment.site)
+    
+    @staticmethod
+    def _segment_to_dict(segment: Segment) -> Dict[str, Any]:
+        """Convert segment object to dictionary"""
+        return {
+            "site": segment.site,
+            "vlan_id": segment.vlan_id,
+            "epg_name": segment.epg_name,
+            "segment": segment.segment,
+            "description": segment.description
+        }
     
     @staticmethod
     async def get_segments(site: Optional[str] = None, allocated: Optional[bool] = None) -> List[Dict[str, Any]]:
@@ -46,11 +63,8 @@ class SegmentService:
         logger.info(f"Creating segment: site={segment.site}, vlan_id={segment.vlan_id}, epg={segment.epg_name}")
         
         try:
-            # Validate site
-            Validators.validate_site(segment.site)
-            
-            # Validate EPG name
-            segment.epg_name = Validators.validate_epg_name(segment.epg_name)
+            # Validate segment data
+            SegmentService._validate_segment_data(segment)
             
             # Check if VLAN ID already exists for this site
             if await DatabaseUtils.check_vlan_exists(segment.site, segment.vlan_id):
@@ -61,13 +75,7 @@ class SegmentService:
                 )
             
             # Create the segment
-            segment_data = {
-                "site": segment.site,
-                "vlan_id": segment.vlan_id,
-                "epg_name": segment.epg_name,
-                "segment": segment.segment,
-                "description": segment.description
-            }
+            segment_data = SegmentService._segment_to_dict(segment)
             
             segment_id = await DatabaseUtils.create_segment(segment_data)
             logger.info(f"Created segment with ID: {segment_id}")
@@ -116,8 +124,8 @@ class SegmentService:
             # Validate ObjectId format
             Validators.validate_object_id(segment_id)
             
-            # Validate site
-            Validators.validate_site(updated_segment.site)
+            # Validate segment data
+            SegmentService._validate_segment_data(updated_segment)
             
             # Check if segment exists
             existing_segment = await DatabaseUtils.get_segment_by_id(segment_id)
@@ -136,13 +144,8 @@ class SegmentService:
                     )
             
             # Update the segment
-            success = await DatabaseUtils.update_segment_by_id(segment_id, {
-                "site": updated_segment.site,
-                "vlan_id": updated_segment.vlan_id,
-                "epg_name": updated_segment.epg_name,
-                "segment": updated_segment.segment,
-                "description": updated_segment.description
-            })
+            update_data = SegmentService._segment_to_dict(updated_segment)
+            success = await DatabaseUtils.update_segment_by_id(segment_id, update_data)
             
             if not success:
                 raise HTTPException(status_code=500, detail="Failed to update segment")
@@ -258,8 +261,8 @@ class SegmentService:
             
             for segment in segments:
                 try:
-                    # Validate site
-                    Validators.validate_site(segment.site)
+                    # Validate segment data
+                    SegmentService._validate_segment_data(segment)
                     
                     # Check if VLAN ID already exists for this site
                     if await DatabaseUtils.check_vlan_exists(segment.site, segment.vlan_id):
@@ -267,14 +270,7 @@ class SegmentService:
                         continue
                     
                     # Create the segment
-                    segment_data = {
-                        "site": segment.site,
-                        "vlan_id": segment.vlan_id,
-                        "epg_name": segment.epg_name,
-                        "segment": segment.segment,
-                        "description": segment.description
-                    }
-                    
+                    segment_data = SegmentService._segment_to_dict(segment)
                     await DatabaseUtils.create_segment(segment_data)
                     created += 1
                     
