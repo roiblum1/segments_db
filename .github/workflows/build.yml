@@ -32,18 +32,6 @@ jobs:
         git tag $VERSION
         git push origin $VERSION
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v3
-
-    - name: Debug secrets
-      run: |
-        echo "Username length: ${#DOCKER_USERNAME}"
-        echo "Password length: ${#DOCKER_PASSWORD}"
-        echo "Username starts with: ${DOCKER_USERNAME:0:3}..."
-      env:
-        DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-        DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
-
     - name: Log in to Docker Hub
       run: |
         echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
@@ -54,24 +42,3 @@ jobs:
         docker build -t ${{ secrets.DOCKER_USERNAME }}/vlan-manager:latest .
         docker push ${{ secrets.DOCKER_USERNAME }}/vlan-manager:${{ steps.version.outputs.version }}
         docker push ${{ secrets.DOCKER_USERNAME }}/vlan-manager:latest
-
-    - name: Build Podman image and save
-      run: |
-        # Install podman
-        sudo apt-get update
-        sudo apt-get install -y podman
-        
-        # Build with podman
-        podman build -t vlan-manager:${{ steps.version.outputs.version }} .
-        
-        # Save to tar file
-        mkdir -p podman-images
-        podman save vlan-manager:${{ steps.version.outputs.version }} -o podman-images/vlan-manager-${{ steps.version.outputs.version }}.tar
-        gzip podman-images/vlan-manager-${{ steps.version.outputs.version }}.tar
-
-    - name: Upload Podman image
-      uses: actions/upload-artifact@v4
-      with:
-        name: podman-image-${{ steps.version.outputs.version }}
-        path: podman-images/
-        retention-days: 30
