@@ -5,7 +5,7 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
-from .config.settings import setup_logging, SITES
+from .config.settings import setup_logging, SITES, validate_site_prefixes
 from .database.mongodb import connect_to_mongo, close_mongo_connection
 from .api.routes import router
 
@@ -16,10 +16,15 @@ logger = setup_logging()
 async def lifespan(app: FastAPI):
     # Startup
     try:
+        # Validate site prefixes configuration before anything else
+        logger.info("Validating site prefixes configuration...")
+        validate_site_prefixes()
+        logger.info("Site prefixes validation passed")
+        
         await connect_to_mongo()
         logger.info(f"Database initialized. Managing sites: {SITES}")
     except Exception as e:
-        logger.error(f"Failed to initialize database: {e}")
+        logger.error(f"Failed to initialize application: {e}")
         raise
     
     yield
