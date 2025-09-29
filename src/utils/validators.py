@@ -13,21 +13,26 @@ class Validators:
     @staticmethod
     def validate_site(site: str) -> None:
         """Validate if site is in configured sites"""
+        logger.info(f"Validating site: {site}")
         if site not in SITES:
-            logger.warning(f"Invalid site requested: {site}")
+            logger.warning(f"Invalid site requested: {site}, valid sites: {SITES}")
             raise HTTPException(
                 status_code=400, 
                 detail=f"Invalid site. Must be one of: {SITES}"
             )
+        logger.info(f"Site validation passed: {site}")
     
     @staticmethod
     def validate_object_id(object_id: str) -> None:
         """Validate ObjectId format"""
+        logger.info(f"Validating ObjectId: {object_id}")
         if not ObjectId.is_valid(object_id):
+            logger.warning(f"Invalid ObjectId format: {object_id}")
             raise HTTPException(
                 status_code=400, 
                 detail="Invalid ID format"
             )
+        logger.info(f"ObjectId validation passed: {object_id}")
     
     @staticmethod
     def validate_segment_not_allocated(segment: Dict[str, Any]) -> None:
@@ -41,11 +46,14 @@ class Validators:
     @staticmethod
     def validate_epg_name(epg_name: str) -> None:
         """Validate that EPG name is not empty or whitespace only"""
+        logger.info(f"Validating EPG name: '{epg_name}'")
         if not epg_name or not epg_name.strip():
+            logger.warning(f"Invalid EPG name: empty or whitespace only")
             raise HTTPException(
                 status_code=400,
                 detail="EPG name cannot be empty or contain only whitespace"
             )
+        logger.info(f"EPG name validation passed: '{epg_name}'")
     
     @staticmethod
     def validate_segment_format(segment: str, site: str) -> None:
@@ -53,6 +61,7 @@ class Validators:
         import ipaddress
         from ..config.settings import get_site_prefix
         
+        logger.info(f"Validating segment format: '{segment}' for site: {site}")
         expected_prefix = get_site_prefix(site)
         
         try:
@@ -80,10 +89,14 @@ class Validators:
             first_octet = str(network.network_address).split('.')[0]
             
             if first_octet != expected_prefix:
+                logger.warning(f"IP prefix mismatch for site '{site}': expected '{expected_prefix}', got '{first_octet}'")
                 raise HTTPException(
                     status_code=400,
                     detail=f"Invalid IP prefix for site '{site}'. Expected to start with '{expected_prefix}', got '{first_octet}'"
                 )
+            
+            logger.info(f"Segment format validation passed: '{segment}' for site {site}")
         except ipaddress.AddressValueError:
+            logger.warning(f"Invalid IP network format: {segment}")
             raise HTTPException(status_code=400, detail="Invalid IP network format")
     

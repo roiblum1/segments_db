@@ -32,9 +32,10 @@ class SegmentService:
     @staticmethod
     async def get_segments(site: Optional[str] = None, allocated: Optional[bool] = None) -> List[Dict[str, Any]]:
         """Get segments with optional filters"""
+        logger.info(f"Getting segments: site={site}, allocated={allocated}")
         try:
             segments = await DatabaseUtils.get_segments_with_filters(site, allocated)
-            logger.debug(f"Retrieved {len(segments)} segments")
+            logger.info(f"Retrieved {len(segments)} segments")
             return segments
         except Exception as e:
             logger.error(f"Error retrieving segments: {e}")
@@ -106,7 +107,7 @@ class SegmentService:
             # Convert ObjectId to string
             segment["_id"] = str(segment["_id"])
             
-            logger.debug(f"Retrieved segment {segment_id}")
+            logger.info(f"Retrieved segment {segment_id}: site={segment.get('site')}, vlan_id={segment.get('vlan_id')}")
             return segment
             
         except HTTPException:
