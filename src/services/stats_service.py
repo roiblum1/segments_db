@@ -73,9 +73,10 @@ class StatsService:
             
             # Test basic query operations
             try:
-                recent_segments = await DatabaseUtils.get_segments_with_filters(limit=1)
+                recent_segments = await DatabaseUtils.get_segments_with_filters()
                 health_data["database_operations"] = "working"
                 health_data["sample_query_success"] = True
+                health_data["sample_segments_found"] = len(recent_segments)
             except Exception as query_error:
                 health_data["database_operations"] = "limited"
                 health_data["sample_query_success"] = False
