@@ -60,8 +60,12 @@ def get_site_prefix(site: str) -> str:
 # Logging Configuration
 def setup_logging():
     """Configure logging for the application"""
+    # Get log level from environment variable, default to INFO
+    log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
+    log_level = getattr(logging, log_level_str, logging.INFO)
+    
     logging.basicConfig(
-        level=logging.INFO,
+        level=log_level,
         format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] %(funcName)s() - %(message)s',
         handlers=[
             logging.StreamHandler(sys.stdout),
