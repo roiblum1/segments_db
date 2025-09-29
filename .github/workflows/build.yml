@@ -1,0 +1,67 @@
+name: Build and Push
+
+on:
+  push:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Generate version
+      id: version
+      run: |
+        LATEST_TAG=$(git tag -l "v*.*.*" | sort -V | tail -n1)
+        if [[ -z "$LATEST_TAG" ]]; then
+          VERSION="v1.0.0"
+        else
+          IFS='.' read -r MAJOR MINOR PATCH <<< "${LATEST_TAG#v}"
+          PATCH=$((PATCH + 1))
+          VERSION="v${MAJOR}.${MINOR}.${PATCH}"
+        fi
+        echo "version=$VERSION" >> $GITHUB_OUTPUT
+        git tag $VERSION
+        git push origin $VERSION
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Log in to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKER_USERNAME }}
+        password: ${{ secrets.DOCKER_PASSWORD }}
+
+    - name: Build and push Docker image
+      run: |
+        docker build -t ${{ secrets.DOCKER_USERNAME }}/vlan-manager:${{ steps.version.outputs.version }} .
+        docker build -t ${{ secrets.DOCKER_USERNAME }}/vlan-manager:latest .
+        docker push ${{ secrets.DOCKER_USERNAME }}/vlan-manager:${{ steps.version.outputs.version }}
+        docker push ${{ secrets.DOCKER_USERNAME }}/vlan-manager:latest
+
+    - name: Build Podman image and save
+      run: |
+        # Install podman
+        sudo apt-get update
+        sudo apt-get install -y podman
+        
+        # Build with podman
+        podman build -t vlan-manager:${{ steps.version.outputs.version }} .
+        
+        # Save to tar file
+        mkdir -p podman-images
+        podman save vlan-manager:${{ steps.version.outputs.version }} -o podman-images/vlan-manager-${{ steps.version.outputs.version }}.tar
+        gzip podman-images/vlan-manager-${{ steps.version.outputs.version }}.tar
+
+    - name: Upload Podman image
+      uses: actions/upload-artifact@v4
+      with:
+        name: podman-image-${{ steps.version.outputs.version }}
+        path: podman-images/
+        retention-days: 30
