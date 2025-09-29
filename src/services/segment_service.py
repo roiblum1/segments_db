@@ -2,7 +2,7 @@ import logging
 from typing import Optional, List, Dict, Any
 from fastapi import HTTPException
 
-from ..models.schemas import SegmentCreate
+from ..models.schemas import Segment
 from ..utils.database_utils import DatabaseUtils
 from ..utils.validators import Validators
 from ..config.settings import SITES
@@ -41,13 +41,16 @@ class SegmentService:
             raise HTTPException(status_code=500, detail=str(e))
     
     @staticmethod
-    async def create_segment(segment: SegmentCreate) -> Dict[str, str]:
+    async def create_segment(segment: Segment) -> Dict[str, str]:
         """Create a new segment"""
         logger.info(f"Creating segment: site={segment.site}, vlan_id={segment.vlan_id}, epg={segment.epg_name}")
         
         try:
             # Validate site
             Validators.validate_site(segment.site)
+            
+            # Validate EPG name
+            segment.epg_name = Validators.validate_epg_name(segment.epg_name)
             
             # Check if VLAN ID already exists for this site
             if await DatabaseUtils.check_vlan_exists(segment.site, segment.vlan_id):
@@ -105,7 +108,7 @@ class SegmentService:
             raise HTTPException(status_code=500, detail=str(e))
     
     @staticmethod
-    async def update_segment(segment_id: str, updated_segment: SegmentCreate) -> Dict[str, str]:
+    async def update_segment(segment_id: str, updated_segment: Segment) -> Dict[str, str]:
         """Update a segment"""
         logger.info(f"Updating segment: {segment_id}")
         
@@ -245,7 +248,7 @@ class SegmentService:
             raise HTTPException(status_code=500, detail=str(e))
     
     @staticmethod
-    async def create_segments_bulk(segments: List[SegmentCreate]) -> Dict[str, Any]:
+    async def create_segments_bulk(segments: List[Segment]) -> Dict[str, Any]:
         """Create multiple segments at once"""
         logger.info(f"Bulk creating {len(segments)} segments")
         

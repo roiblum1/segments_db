@@ -3,7 +3,7 @@ from fastapi import APIRouter
 
 from ..models.schemas import (
     VLANAllocationRequest, VLANAllocationResponse, 
-    VLANRelease, SegmentCreate
+    VLANRelease, Segment
 )
 from ..services.vlan_service import VLANService
 from ..services.segment_service import SegmentService
@@ -40,7 +40,7 @@ async def search_segments(
     return await SegmentService.search_segments(q, site, allocated)
 
 @router.post("/segments")
-async def create_segment(segment: SegmentCreate):
+async def create_segment(segment: Segment):
     """Create a new segment"""
     return await SegmentService.create_segment(segment)
 
@@ -50,7 +50,7 @@ async def get_segment(segment_id: str):
     return await SegmentService.get_segment_by_id(segment_id)
 
 @router.put("/segments/{segment_id}")
-async def update_segment(segment_id: str, segment: SegmentCreate):
+async def update_segment(segment_id: str, segment: Segment):
     """Update a segment"""
     return await SegmentService.update_segment(segment_id, segment)
 
@@ -66,7 +66,7 @@ async def delete_segment(segment_id: str):
     return await SegmentService.delete_segment(segment_id)
 
 @router.post("/segments/bulk")
-async def create_segments_bulk(segments: List[SegmentCreate]):
+async def create_segments_bulk(segments: List[Segment]):
     """Create multiple segments at once"""
     return await SegmentService.create_segments_bulk(segments)
 

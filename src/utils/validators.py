@@ -39,6 +39,16 @@ class Validators:
             )
     
     @staticmethod
+    def validate_epg_name(epg_name: str) -> str:
+        """Validate that EPG name is not empty or whitespace only"""
+        if not epg_name or not epg_name.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="EPG name cannot be empty or contain only whitespace"
+            )
+        return epg_name.strip()
+    
+    @staticmethod
     def validate_bulk_segments(segments: List[Dict[str, Any]]) -> List[str]:
         """Validate bulk segments and return list of errors"""
         errors = []
@@ -46,5 +56,10 @@ class Validators:
         for segment in segments:
             if segment.get("site") not in SITES:
                 errors.append(f"Invalid site: {segment.get('site')}")
+            
+            # Validate EPG name
+            epg_name = segment.get("epg_name", "")
+            if not epg_name or not epg_name.strip():
+                errors.append("EPG name cannot be empty")
         
         return errors
