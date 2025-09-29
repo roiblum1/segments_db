@@ -62,10 +62,13 @@ class SegmentService:
     async def create_segment(segment: Segment) -> Dict[str, str]:
         """Create a new segment"""
         logger.info(f"Creating segment: site={segment.site}, vlan_id={segment.vlan_id}, epg={segment.epg_name}")
+        logger.debug(f"DEBUG: Full segment data - {segment}")
         
         try:
             # Validate segment data
+            logger.debug(f"DEBUG: Starting validation for segment {segment.vlan_id}")
             SegmentService._validate_segment_data(segment)
+            logger.debug(f"DEBUG: Validation completed for segment {segment.vlan_id}")
             
             # Check if VLAN ID already exists for this site
             if await DatabaseUtils.check_vlan_exists(segment.site, segment.vlan_id):
