@@ -6,7 +6,7 @@
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Version](https://img.shields.io/badge/version-v1.0.10-green.svg)
 
-A modern, containerized VLAN segment management system built with FastAPI and JSON file storage. Features High Availability (HA) dual-write capability, responsive web UI with dark mode, RESTful API, automated CI/CD pipeline, comprehensive validation, enhanced health monitoring, and deployment options for both air-gapped environments and Kubernetes/OpenShift.
+A modern, containerized VLAN segment management system built with FastAPI and JSON file storage. Features responsive web UI with dark mode, RESTful API, automated CI/CD pipeline, comprehensive validation, enhanced health monitoring, and deployment options for both air-gapped environments and Kubernetes/OpenShift.
 
 ## ✨ Features
 
@@ -22,7 +22,6 @@ A modern, containerized VLAN segment management system built with FastAPI and JS
 - 📁 **Log Viewing**: Built-in log file viewer via web interface
 - 🐳 **Container Ready**: Docker/Podman deployment with health checks and startup validation
 - 💾 **JSON File Storage**: Persistent local file storage with atomic operations and file locking
-- ⚡ **High Availability**: Optional HA mode with dual-write to primary and backup storage
 - ☸️ **Kubernetes/OpenShift**: Complete Helm chart with PVC support
 - 🔒 **Air-Gapped Deployment**: Podman save/load workflow for isolated networks
 - 🚀 **CI/CD Pipeline**: Automated Docker builds with version management and artifact generation
@@ -36,7 +35,7 @@ A modern, containerized VLAN segment management system built with FastAPI and JS
 ├── src/                    # Application source code
 │   ├── api/               # FastAPI routes and endpoints
 │   ├── config/            # Configuration and logging setup
-│   ├── database/          # JSON storage operations (single-write and HA dual-write)
+│   ├── database/          # JSON storage operations with file locking
 │   ├── models/            # Pydantic data models
 │   ├── services/          # Business logic layer
 │   └── utils/             # Utilities and validators
@@ -65,13 +64,12 @@ pip install -r requirements.txt
 export SITES="site1,site2,site3"
 export SITE_PREFIXES="site1:192,site2:193,site3:194"
 export DATA_DIR="./data"           # Optional: defaults to /app/data
-export HA_MODE="false"              # Optional: enable HA dual-write mode
 
 # Run application
 python main.py
 ```
 
-### Option 2: Container Deployment (Single-Write Mode)
+### Option 2: Container Deployment
 ```bash
 # Build container image
 podman build -t vlan-manager .
@@ -86,21 +84,7 @@ podman run -d \
   vlan-manager
 ```
 
-### Option 3: High Availability (HA) Mode
-```bash
-# Run with dual-write to primary and backup storage
-podman run -d \
-  --name vlan-manager-ha \
-  -p 8000:8000 \
-  -v ./data:/app/data:Z \
-  -v ./backup:/app/backup:Z \
-  -e HA_MODE="true" \
-  -e SITES="site1,site2,site3" \
-  -e SITE_PREFIXES="site1:192,site2:193,site3:194" \
-  vlan-manager
-```
-
-### Option 4: Air-Gapped Deployment
+### Option 3: Air-Gapped Deployment
 ```bash
 # On connected system - build and save image
 ./deploy/scripts/build-and-save.sh
@@ -154,9 +138,7 @@ SITES="site1,site2,site3"
 SITE_PREFIXES="site1:192,site2:193,site3:194"
 
 # Storage Configuration (Optional)
-DATA_DIR="/app/data"              # Primary storage location
-BACKUP_DIR="/app/backup"          # Backup storage location (HA mode only)
-HA_MODE="false"                   # Enable High Availability dual-write mode
+DATA_DIR="/app/data"              # Storage location
 
 # Server Configuration (Optional)
 SERVER_HOST="0.0.0.0"
@@ -189,24 +171,11 @@ SITE_PREFIXES="site1:192,site2:193,site3:194,site4:195"
 
 ### Storage Architecture
 
-#### Single-Write Mode (Default)
 - Data stored in JSON file at `DATA_DIR/segments.json`
-- Thread-safe operations using file locking
+- Thread-safe operations using file locking (filelock library)
 - Atomic writes using temporary file + rename pattern
-- Suitable for single-instance deployments
-
-#### High Availability (HA) Mode
-- Dual-write to both primary (`DATA_DIR`) and backup (`BACKUP_DIR`) locations
-- Independent file locks prevent race conditions
-- Automatic fallback: reads from backup if primary fails
-- Auto-recovery: restores primary from backup on failure
-- Parallel writes minimize performance impact (~40-50% overhead)
-- Continue on partial success (warnings logged)
-- Health endpoint reports sync status
-
-**Use Cases:**
-- **Single-Write**: Development, testing, single-pod deployments
-- **HA Mode**: Production, Kubernetes with multiple PVCs, critical workloads
+- Suitable for all deployment scenarios
+- Persistent storage via Docker volumes or Kubernetes PVCs
 
 ## 🚀 CI/CD Pipeline
 
@@ -278,18 +247,6 @@ podman run -d \
   -e SITE_PREFIXES="site1:192,site2:193,site3:194" \
   --restart unless-stopped \
   vlan-manager
-
-# Run in HA mode with dual storage
-podman run -d \
-  --name vlan-manager-ha \
-  -p 8000:8000 \
-  -v ./data:/app/data:Z \
-  -v ./backup:/app/backup:Z \
-  -e HA_MODE="true" \
-  -e SITES="site1,site2,site3" \
-  -e SITE_PREFIXES="site1:192,site2:193,site3:194" \
-  --restart unless-stopped \
-  vlan-manager
 ```
 
 ### Enhanced Health Monitoring
@@ -305,30 +262,17 @@ Container includes comprehensive health checks:
 - **Timeout**: 10 seconds  
 - **Start Period**: 60 seconds
 
-**Sample Health Response (HA Mode):**
+**Sample Health Response:**
 ```json
 {
   "status": "healthy",
   "timestamp": "2025-10-30T13:56:06.644223",
   "sites": ["site1", "site2", "site3"],
-  "storage_type": "ha_json_file",
-  "ha_mode": true,
-  "storage": {
-    "primary": {
-      "path": "/app/data/segments.json",
-      "exists": true,
-      "readable": true,
-      "writable": true
-    },
-    "backup": {
-      "path": "/app/backup/segments.json",
-      "exists": true,
-      "readable": true,
-      "writable": true
-    },
-    "in_sync": true,
-    "status": "accessible"
-  },
+  "storage_type": "json_file",
+  "storage": "accessible",
+  "storage_path": "/app/data/segments.json",
+  "storage_readable": true,
+  "storage_writable": true,
   "total_segments": 3,
   "sites_summary": {
     "site1": {"total": 1, "allocated": 0, "available": 1, "utilization": 0.0},
@@ -366,7 +310,7 @@ Copy these files:
 ```bash
 # Configure environment
 cp .env.example .env
-vi .env  # Set SITES, SITE_PREFIXES, and optionally HA_MODE
+vi .env  # Set SITES and SITE_PREFIXES
 
 # Deploy
 ./load-and-run.sh [tag]
@@ -383,17 +327,10 @@ Complete Helm chart included for enterprise deployments.
 
 ### Installation
 ```bash
-# Basic deployment (single-write mode)
+# Basic deployment
 helm install vlan-manager ./deploy/helm \
   --set config.sites="site1,site2,site3" \
   --set config.sitePrefixes="site1:192,site2:193,site3:194" \
-  --set persistence.enabled=true
-
-# HA deployment with dual-write mode
-helm install vlan-manager ./deploy/helm \
-  --set config.sites="site1,site2,site3" \
-  --set config.sitePrefixes="site1:192,site2:193,site3:194" \
-  --set config.haMode="true" \
   --set persistence.enabled=true
 
 # Production deployment with custom values
@@ -405,11 +342,10 @@ helm install vlan-manager ./deploy/helm -f production-values.yaml
 # Create project
 oc new-project vlan-manager
 
-# Deploy with HA mode
+# Deploy
 helm install vlan-manager ./deploy/helm \
   --set config.sites="site1,site2,site3" \
   --set config.sitePrefixes="site1:192,site2:193,site3:194" \
-  --set config.haMode="true" \
   --set persistence.enabled=true
 
 # Expose route
@@ -504,7 +440,6 @@ curl http://localhost:8000/api/health
 
 # Verify data directory exists and is writable
 ls -la /app/data
-ls -la /app/backup  # If using HA mode
 
 # Check file permissions
 podman exec vlan-manager ls -la /app/data
@@ -516,7 +451,7 @@ podman exec vlan-manager ls -la /app/data
 podman logs vlan-manager
 
 # Verify environment variables
-podman exec vlan-manager env | grep -E "SITES|DATA_DIR|HA_MODE"
+podman exec vlan-manager env | grep -E "SITES|DATA_DIR"
 ```
 
 #### Port Already in Use
@@ -560,13 +495,12 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🏷️ Version History
 
-- **v3.0.0**: JSON Storage Migration with High Availability
+- **v3.0.0**: JSON Storage Migration
   - Migrated from MongoDB to JSON file storage
-  - High Availability (HA) dual-write mode
-  - Atomic file operations with locking
+  - Atomic file operations with filelock library
+  - Thread-safe concurrent access
   - PVC support for Kubernetes/OpenShift
-  - Automatic fallback and recovery in HA mode
-  - Enhanced health monitoring with storage sync status
+  - Simplified architecture with local file persistence
 
 - **v2.0.0**: Enhanced validation and filtering features
   - Site-specific IP prefix validation

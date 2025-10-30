@@ -53,8 +53,6 @@ SITE_PREFIXES=site1:192,site2:193,site3:194
 
 # Optional - Storage configuration
 DATA_DIR=/app/data
-BACKUP_DIR=/app/backup
-HA_MODE=false  # Enable High Availability dual-write mode
 ```
 
 ## ☸️ Helm Deployment (OpenShift/Kubernetes)
@@ -66,17 +64,10 @@ HA_MODE=false  # Enable High Availability dual-write mode
 
 ### Deploy with Helm
 ```bash
-# Install (single-write mode)
+# Install
 helm install vlan-manager ./deploy/helm \
   --set config.sites="site1,site2,site3" \
   --set config.sitePrefixes="site1:192,site2:193,site3:194" \
-  --set persistence.enabled=true
-
-# Install with High Availability mode
-helm install vlan-manager ./deploy/helm \
-  --set config.sites="site1,site2,site3" \
-  --set config.sitePrefixes="site1:192,site2:193,site3:194" \
-  --set config.haMode="true" \
   --set persistence.enabled=true
 
 # Upgrade
@@ -91,11 +82,10 @@ helm uninstall vlan-manager
 # Create new project
 oc new-project vlan-manager
 
-# Deploy with Helm (HA mode recommended)
+# Deploy with Helm
 helm install vlan-manager ./deploy/helm \
   --set config.sites="site1,site2,site3" \
   --set config.sitePrefixes="site1:192,site2:193,site3:194" \
-  --set config.haMode="true" \
   --set persistence.enabled=true
 
 # Create route (OpenShift)
@@ -117,22 +107,11 @@ Edit `deploy/helm/values.yaml` for:
 # Build image locally
 podman build -t vlan-manager:dev .
 
-# Run locally (single-write mode)
+# Run locally
 podman run -d \
   --name vlan-manager-dev \
   -p 8000:8000 \
   -v ./data:/app/data:Z \
-  -e SITES="site1,site2,site3" \
-  -e SITE_PREFIXES="site1:192,site2:193,site3:194" \
-  vlan-manager:dev
-
-# Run locally (HA mode)
-podman run -d \
-  --name vlan-manager-ha-dev \
-  -p 8000:8000 \
-  -v ./data:/app/data:Z \
-  -v ./backup:/app/backup:Z \
-  -e HA_MODE="true" \
   -e SITES="site1,site2,site3" \
   -e SITE_PREFIXES="site1:192,site2:193,site3:194" \
   vlan-manager:dev

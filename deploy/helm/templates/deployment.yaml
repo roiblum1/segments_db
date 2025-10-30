@@ -62,16 +62,6 @@ spec:
                 configMapKeyRef:
                   name: {{ include "vlan-manager.fullname" . }}
                   key: DATA_DIR
-            - name: BACKUP_DIR
-              valueFrom:
-                configMapKeyRef:
-                  name: {{ include "vlan-manager.fullname" . }}
-                  key: BACKUP_DIR
-            - name: HA_MODE
-              valueFrom:
-                configMapKeyRef:
-                  name: {{ include "vlan-manager.fullname" . }}
-                  key: HA_MODE
             - name: SERVER_HOST
               valueFrom:
                 configMapKeyRef:

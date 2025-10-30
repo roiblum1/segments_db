@@ -23,8 +23,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     && rm -rf /var/lib/apt/lists/*
 
-# Create data directories for JSON storage (primary and backup for HA mode)
-RUN mkdir -p /app/data /app/backup && chmod 777 /app/data /app/backup
+# Create data directory for JSON storage
+RUN mkdir -p /app/data && chmod 777 /app/data
 
 # Copy requirements first for better caching
 COPY requirements.txt .
@@ -52,8 +52,8 @@ LABEL org.opencontainers.image.title="VLAN Manager" \
 # Expose port
 EXPOSE 8000
 
-# Volumes for persistent data (primary and backup)
-VOLUME ["/app/data", "/app/backup"]
+# Volume for persistent data
+VOLUME ["/app/data"]
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \

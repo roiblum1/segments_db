@@ -4,8 +4,6 @@ import sys
 
 # Data Storage Configuration
 DATA_DIR = os.getenv("DATA_DIR", "/app/data")
-BACKUP_DIR = os.getenv("BACKUP_DIR", "/app/backup")
-HA_MODE = os.getenv("HA_MODE", "false").lower() in ("true", "1", "yes")
 
 # Sites Configuration
 SITES = os.getenv("SITES", "site1,site2,site3").split(",")

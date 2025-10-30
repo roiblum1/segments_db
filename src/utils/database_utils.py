@@ -2,13 +2,8 @@ import logging
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone
 
-from ..config.settings import SITES, HA_MODE
-
-# Dynamically import storage based on HA_MODE
-if HA_MODE:
-    from ..database.ha_json_storage import get_storage
-else:
-    from ..database.json_storage import get_storage
+from ..config.settings import SITES
+from ..database.json_storage import get_storage
 
 logger = logging.getLogger(__name__)
 

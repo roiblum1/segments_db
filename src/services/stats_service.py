@@ -35,48 +35,32 @@ class StatsService:
     @staticmethod
     async def health_check() -> Dict[str, Any]:
         """Enhanced health check endpoint with comprehensive system validation"""
-        from ..config.settings import HA_MODE
+        from ..database.json_storage import get_storage
         import os
-
-        if HA_MODE:
-            from ..database.ha_json_storage import get_storage
-            storage_type = "ha_json_file"
-        else:
-            from ..database.json_storage import get_storage
-            storage_type = "json_file"
 
         health_data = {
             "status": "healthy",
             "timestamp": datetime.now().isoformat(),
             "sites": SITES,
-            "storage_type": storage_type,
-            "ha_mode": HA_MODE
+            "storage_type": "json_file"
         }
 
         try:
             # Check JSON storage accessibility
             storage = get_storage()
+            data_file = storage.data_file
 
-            # For HA storage, check both primary and backup
-            if HA_MODE and hasattr(storage, 'get_health_status'):
-                ha_status = storage.get_health_status()
-                health_data["storage"] = ha_status
-                health_data["storage"] ["status"] = "accessible" if ha_status["primary"]["exists"] else "not_found"
+            # Verify data file exists and is readable
+            if os.path.exists(data_file):
+                health_data["storage"] = "accessible"
+                health_data["storage_path"] = str(data_file)
+
+                # Check file permissions
+                health_data["storage_readable"] = os.access(data_file, os.R_OK)
+                health_data["storage_writable"] = os.access(data_file, os.W_OK)
             else:
-                # Single storage check
-                data_file = storage.data_file
-
-                # Verify data file exists and is readable
-                if os.path.exists(data_file):
-                    health_data["storage"] = "accessible"
-                    health_data["storage_path"] = str(data_file)
-
-                    # Check file permissions
-                    health_data["storage_readable"] = os.access(data_file, os.R_OK)
-                    health_data["storage_writable"] = os.access(data_file, os.W_OK)
-                else:
-                    health_data["storage"] = "not_found"
-                    health_data["storage_path"] = str(data_file)
+                health_data["storage"] = "not_found"
+                health_data["storage_path"] = str(data_file)
 
             # Test database operations - Get total segments count
             total_segments = 0

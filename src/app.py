@@ -5,20 +5,13 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
-from .config.settings import setup_logging, SITES, validate_site_prefixes, HA_MODE
+from .config.settings import setup_logging, SITES, validate_site_prefixes
 from .api.routes import router
+from .database.json_storage import init_storage, close_storage
 import os
 
 # Setup logging
 logger = setup_logging()
-
-# Dynamically import storage based on HA_MODE
-if HA_MODE:
-    from .database.ha_json_storage import init_storage, close_storage
-    storage_type = "HA JSON storage (dual-write)"
-else:
-    from .database.json_storage import init_storage, close_storage
-    storage_type = "JSON storage (single-write)"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -30,7 +23,7 @@ async def lifespan(app: FastAPI):
         logger.info("Site prefixes validation passed")
 
         await init_storage()
-        logger.info(f"{storage_type} initialized. Managing sites: {SITES}")
+        logger.info(f"JSON storage initialized. Managing sites: {SITES}")
     except Exception as e:
         logger.error(f"Failed to initialize application: {e}")
         raise

@@ -58,8 +58,6 @@ config:
   sites: "site1,site2,site3"
   sitePrefixes: "site1:192,site2:193,site3:194"
   dataDir: "/app/data"
-  backupDir: "/app/backup"
-  haMode: "false"  # Enable High Availability dual-write mode
   serverHost: "0.0.0.0"
   serverPort: "8000"
   logLevel: "INFO"

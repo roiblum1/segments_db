@@ -13,8 +13,6 @@ data:
   SITES: {{ .Values.config.sites | quote }}
   SITE_PREFIXES: {{ .Values.config.sitePrefixes | quote }}
   DATA_DIR: {{ .Values.config.dataDir | quote }}
-  BACKUP_DIR: {{ .Values.config.backupDir | quote }}
-  HA_MODE: {{ .Values.config.haMode | quote }}
 
   # Server configuration
   SERVER_HOST: {{ .Values.config.serverHost | quote }}

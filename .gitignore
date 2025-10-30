@@ -269,7 +269,5 @@ backup/
 
 # JSON Storage data directories
 data/
-ha-data/
-ha-backup/
 test-data/
 *.json.lock
