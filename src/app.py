@@ -5,12 +5,20 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
-from .config.settings import setup_logging, SITES, validate_site_prefixes
-from .database.mongodb import connect_to_mongo, close_mongo_connection
+from .config.settings import setup_logging, SITES, validate_site_prefixes, HA_MODE
 from .api.routes import router
+import os
 
 # Setup logging
 logger = setup_logging()
+
+# Dynamically import storage based on HA_MODE
+if HA_MODE:
+    from .database.ha_json_storage import init_storage, close_storage
+    storage_type = "HA JSON storage (dual-write)"
+else:
+    from .database.json_storage import init_storage, close_storage
+    storage_type = "JSON storage (single-write)"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -20,17 +28,17 @@ async def lifespan(app: FastAPI):
         logger.info("Validating site prefixes configuration...")
         validate_site_prefixes()
         logger.info("Site prefixes validation passed")
-        
-        await connect_to_mongo()
-        logger.info(f"Database initialized. Managing sites: {SITES}")
+
+        await init_storage()
+        logger.info(f"{storage_type} initialized. Managing sites: {SITES}")
     except Exception as e:
         logger.error(f"Failed to initialize application: {e}")
         raise
-    
+
     yield
-    
+
     # Shutdown
-    await close_mongo_connection()
+    await close_storage()
 
 # FastAPI app - used by uvicorn server
 app = FastAPI(title="VLAN Manager API", lifespan=lifespan)

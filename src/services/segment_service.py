@@ -166,7 +166,7 @@ class SegmentService:
     @staticmethod
     async def update_segment_clusters(segment_id: str, cluster_names: str) -> Dict[str, str]:
         """Update cluster assignment for a segment (for shared segments)"""
-        from datetime import datetime
+        from datetime import datetime, timezone
         logger.info(f"Updating cluster assignment for segment: {segment_id}")
         
         try:
@@ -194,19 +194,19 @@ class SegmentService:
                 
                 if validated_clusters:
                     update_data["cluster_name"] = ",".join(validated_clusters)
-                    update_data["allocated_at"] = datetime.utcnow()
+                    update_data["allocated_at"] = datetime.now(timezone.utc)
                     update_data["released"] = False
                     update_data["released_at"] = None
                 else:
                     # No valid clusters, release the segment
                     update_data["cluster_name"] = None
                     update_data["released"] = True
-                    update_data["released_at"] = datetime.utcnow()
+                    update_data["released_at"] = datetime.now(timezone.utc)
             else:
                 # Empty cluster names, release the segment
                 update_data["cluster_name"] = None
                 update_data["released"] = True
-                update_data["released_at"] = datetime.utcnow()
+                update_data["released_at"] = datetime.now(timezone.utc)
             
             success = await DatabaseUtils.update_segment_by_id(segment_id, update_data)
             

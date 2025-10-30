@@ -39,7 +39,7 @@ Copy these files to your air-gapped environment:
 ```bash
 # Configure environment
 cp .env.example .env
-vi .env  # Edit with your MongoDB details
+vi .env  # Edit with your configuration
 
 # Load and run
 ./load-and-run.sh
@@ -47,12 +47,14 @@ vi .env  # Edit with your MongoDB details
 
 ### Environment Variables
 ```bash
-# Required - your MongoDB connection
-MONGODB_URL=mongodb://username:password@your-mongo-host:27017/vlan_manager?authSource=admin
-DATABASE_NAME=vlan_manager
-
-# Sites configuration
+# Required - Site configuration
 SITES=site1,site2,site3
+SITE_PREFIXES=site1:192,site2:193,site3:194
+
+# Optional - Storage configuration
+DATA_DIR=/app/data
+BACKUP_DIR=/app/backup
+HA_MODE=false  # Enable High Availability dual-write mode
 ```
 
 ## ☸️ Helm Deployment (OpenShift/Kubernetes)
@@ -64,10 +66,18 @@ SITES=site1,site2,site3
 
 ### Deploy with Helm
 ```bash
-# Install
+# Install (single-write mode)
 helm install vlan-manager ./deploy/helm \
-  --set env.MONGODB_URL="mongodb://user:pass@mongo:27017/vlan_manager?authSource=admin" \
-  --set env.SITES="site1,site2,site3"
+  --set config.sites="site1,site2,site3" \
+  --set config.sitePrefixes="site1:192,site2:193,site3:194" \
+  --set persistence.enabled=true
+
+# Install with High Availability mode
+helm install vlan-manager ./deploy/helm \
+  --set config.sites="site1,site2,site3" \
+  --set config.sitePrefixes="site1:192,site2:193,site3:194" \
+  --set config.haMode="true" \
+  --set persistence.enabled=true
 
 # Upgrade
 helm upgrade vlan-manager ./deploy/helm
@@ -81,9 +91,12 @@ helm uninstall vlan-manager
 # Create new project
 oc new-project vlan-manager
 
-# Deploy with Helm
+# Deploy with Helm (HA mode recommended)
 helm install vlan-manager ./deploy/helm \
-  --set env.MONGODB_URL="mongodb://user:pass@mongodb:27017/vlan_manager?authSource=admin"
+  --set config.sites="site1,site2,site3" \
+  --set config.sitePrefixes="site1:192,site2:193,site3:194" \
+  --set config.haMode="true" \
+  --set persistence.enabled=true
 
 # Create route (OpenShift)
 oc expose service vlan-manager
@@ -104,12 +117,24 @@ Edit `deploy/helm/values.yaml` for:
 # Build image locally
 podman build -t vlan-manager:dev .
 
-# Run locally
+# Run locally (single-write mode)
 podman run -d \
   --name vlan-manager-dev \
   -p 8000:8000 \
-  -e MONGODB_URL="your-mongo-url" \
+  -v ./data:/app/data:Z \
   -e SITES="site1,site2,site3" \
+  -e SITE_PREFIXES="site1:192,site2:193,site3:194" \
+  vlan-manager:dev
+
+# Run locally (HA mode)
+podman run -d \
+  --name vlan-manager-ha-dev \
+  -p 8000:8000 \
+  -v ./data:/app/data:Z \
+  -v ./backup:/app/backup:Z \
+  -e HA_MODE="true" \
+  -e SITES="site1,site2,site3" \
+  -e SITE_PREFIXES="site1:192,site2:193,site3:194" \
   vlan-manager:dev
 ```
 

@@ -35,29 +35,59 @@ class StatsService:
     @staticmethod
     async def health_check() -> Dict[str, Any]:
         """Enhanced health check endpoint with comprehensive system validation"""
-        from ..database.mongodb import motor_client
-        
+        from ..config.settings import HA_MODE
+        import os
+
+        if HA_MODE:
+            from ..database.ha_json_storage import get_storage
+            storage_type = "ha_json_file"
+        else:
+            from ..database.json_storage import get_storage
+            storage_type = "json_file"
+
         health_data = {
             "status": "healthy",
             "timestamp": datetime.now().isoformat(),
-            "sites": SITES
+            "sites": SITES,
+            "storage_type": storage_type,
+            "ha_mode": HA_MODE
         }
-        
+
         try:
-            # Check MongoDB connection
-            await motor_client.server_info()
-            health_data["database"] = "connected"
-            
+            # Check JSON storage accessibility
+            storage = get_storage()
+
+            # For HA storage, check both primary and backup
+            if HA_MODE and hasattr(storage, 'get_health_status'):
+                ha_status = storage.get_health_status()
+                health_data["storage"] = ha_status
+                health_data["storage"] ["status"] = "accessible" if ha_status["primary"]["exists"] else "not_found"
+            else:
+                # Single storage check
+                data_file = storage.data_file
+
+                # Verify data file exists and is readable
+                if os.path.exists(data_file):
+                    health_data["storage"] = "accessible"
+                    health_data["storage_path"] = str(data_file)
+
+                    # Check file permissions
+                    health_data["storage_readable"] = os.access(data_file, os.R_OK)
+                    health_data["storage_writable"] = os.access(data_file, os.W_OK)
+                else:
+                    health_data["storage"] = "not_found"
+                    health_data["storage_path"] = str(data_file)
+
             # Test database operations - Get total segments count
             total_segments = 0
             site_counts = {}
-            
+
             for site in SITES:
                 try:
                     site_stats = await DatabaseUtils.get_site_statistics(site)
                     site_total = site_stats.get("total_segments", 0)
                     total_segments += site_total
-                    
+
                     site_counts[site] = {
                         "total": site_total,
                         "allocated": site_stats.get("allocated", 0),
@@ -67,21 +97,21 @@ class StatsService:
                 except Exception as site_error:
                     logger.warning(f"Error getting stats for site {site}: {site_error}")
                     site_counts[site] = {"error": str(site_error)}
-            
+
             health_data["total_segments"] = total_segments
             health_data["sites_summary"] = site_counts
-            
+
             # Test basic query operations
             try:
                 recent_segments = await DatabaseUtils.get_segments_with_filters()
-                health_data["database_operations"] = "working"
+                health_data["storage_operations"] = "working"
                 health_data["sample_query_success"] = True
                 health_data["sample_segments_found"] = len(recent_segments)
             except Exception as query_error:
-                health_data["database_operations"] = "limited"
+                health_data["storage_operations"] = "limited"
                 health_data["sample_query_success"] = False
                 health_data["query_error"] = str(query_error)
-            
+
             # Overall system health summary
             total_sites = len(SITES)
             health_data["system_summary"] = {
@@ -89,13 +119,13 @@ class StatsService:
                 "total_segments": total_segments,
                 "average_segments_per_site": round(total_segments / total_sites, 2) if total_sites > 0 else 0
             }
-            
+
         except Exception as e:
             logger.error(f"Health check failed: {e}")
             health_data.update({
                 "status": "unhealthy",
-                "database": "disconnected",
+                "storage": "error",
                 "error": str(e)
             })
-            
+
         return health_data

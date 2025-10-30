@@ -19,7 +19,6 @@ spec:
     metadata:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
-        checksum/secret: {{ include (print $.Template.BasePath "/secret.yaml") . | sha256sum }}
         {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -58,11 +57,21 @@ spec:
                 configMapKeyRef:
                   name: {{ include "vlan-manager.fullname" . }}
                   key: SITE_PREFIXES
-            - name: DATABASE_NAME
+            - name: DATA_DIR
               valueFrom:
                 configMapKeyRef:
                   name: {{ include "vlan-manager.fullname" . }}
-                  key: DATABASE_NAME
+                  key: DATA_DIR
+            - name: BACKUP_DIR
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "vlan-manager.fullname" . }}
+                  key: BACKUP_DIR
+            - name: HA_MODE
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "vlan-manager.fullname" . }}
+                  key: HA_MODE
             - name: SERVER_HOST
               valueFrom:
                 configMapKeyRef:
@@ -73,14 +82,11 @@ spec:
                 configMapKeyRef:
                   name: {{ include "vlan-manager.fullname" . }}
                   key: SERVER_PORT
-            {{- if .Values.mongodb.secret.create }}
-            # MongoDB connection from Secret
-            - name: MONGODB_URL
+            - name: LOG_LEVEL
               valueFrom:
-                secretKeyRef:
-                  name: {{ .Values.mongodb.secret.name | default (printf "%s-mongodb" (include "vlan-manager.fullname" .)) }}
-                  key: MONGODB_URL
-            {{- end }}
+                configMapKeyRef:
+                  name: {{ include "vlan-manager.fullname" . }}
+                  key: LOG_LEVEL
           {{- with .Values.startupProbe }}
           startupProbe:
             {{- toYaml . | nindent 12 }}
@@ -93,8 +99,8 @@ spec:
             {{- toYaml .Values.resources | nindent 12 }}
           {{- if .Values.persistence.enabled }}
           volumeMounts:
-            - name: logs
-              mountPath: /app/logs
+            - name: data
+              mountPath: {{ .Values.persistence.mountPath }}
           {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:
@@ -110,7 +116,7 @@ spec:
       {{- end }}
       {{- if .Values.persistence.enabled }}
       volumes:
-        - name: logs
+        - name: data
           persistentVolumeClaim:
-            claimName: {{ include "vlan-manager.fullname" . }}-logs
+            claimName: {{ include "vlan-manager.fullname" . }}-data
       {{- end }}

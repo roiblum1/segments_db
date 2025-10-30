@@ -53,30 +53,25 @@ route:
     insecureEdgeTerminationPolicy: Redirect
 
 
-# MongoDB Secret configuration
-mongodb:
-  secret:
-    create: true
-    name: mongodb-credentials
-    # Set this value in your deployment
-    url: "mongodb://username:password@mongodb.example.com:27017/vlan_manager?authSource=admin"
-
 # Application ConfigMap
 config:
   sites: "site1,site2,site3"
   sitePrefixes: "site1:192,site2:193,site3:194"
-  databaseName: "vlan_manager"
+  dataDir: "/app/data"
+  backupDir: "/app/backup"
+  haMode: "false"  # Enable High Availability dual-write mode
   serverHost: "0.0.0.0"
   serverPort: "8000"
   logLevel: "INFO"
 
-# Persistent Volume Claim for logs
+# Persistent Volume Claim for data storage
 persistence:
   enabled: true
   storageClass: ""  # Uses default StorageClass
-  accessMode: ReadWriteMany
+  accessMode: ReadWriteOnce  # Changed to ReadWriteOnce for better compatibility
   size: 1Gi
   annotations: {}
+  mountPath: /app/data
 
 # Resource limits and requests
 resources:

@@ -6,7 +6,7 @@
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Version](https://img.shields.io/badge/version-v1.0.10-green.svg)
 
-A modern, containerized VLAN segment management system built with FastAPI and MongoDB. Features a responsive web UI with dark mode, RESTful API, automated CI/CD pipeline, comprehensive validation, enhanced health monitoring, and deployment options for both air-gapped environments and Kubernetes/OpenShift.
+A modern, containerized VLAN segment management system built with FastAPI and JSON file storage. Features High Availability (HA) dual-write capability, responsive web UI with dark mode, RESTful API, automated CI/CD pipeline, comprehensive validation, enhanced health monitoring, and deployment options for both air-gapped environments and Kubernetes/OpenShift.
 
 ## ✨ Features
 
@@ -21,7 +21,9 @@ A modern, containerized VLAN segment management system built with FastAPI and Mo
 - 📋 **Bulk Operations**: CSV import for mass segment creation with individual validation
 - 📁 **Log Viewing**: Built-in log file viewer via web interface
 - 🐳 **Container Ready**: Docker/Podman deployment with health checks and startup validation
-- ☸️ **Kubernetes/OpenShift**: Complete Helm chart included
+- 💾 **JSON File Storage**: Persistent local file storage with atomic operations and file locking
+- ⚡ **High Availability**: Optional HA mode with dual-write to primary and backup storage
+- ☸️ **Kubernetes/OpenShift**: Complete Helm chart with PVC support
 - 🔒 **Air-Gapped Deployment**: Podman save/load workflow for isolated networks
 - 🚀 **CI/CD Pipeline**: Automated Docker builds with version management and artifact generation
 - ⚡ **Startup Validation**: Fail-fast configuration validation prevents runtime errors
@@ -34,7 +36,7 @@ A modern, containerized VLAN segment management system built with FastAPI and Mo
 ├── src/                    # Application source code
 │   ├── api/               # FastAPI routes and endpoints
 │   ├── config/            # Configuration and logging setup
-│   ├── database/          # MongoDB connection and operations
+│   ├── database/          # JSON storage operations (single-write and HA dual-write)
 │   ├── models/            # Pydantic data models
 │   ├── services/          # Business logic layer
 │   └── utils/             # Utilities and validators
@@ -60,31 +62,45 @@ A modern, containerized VLAN segment management system built with FastAPI and Mo
 pip install -r requirements.txt
 
 # Configure environment
-export MONGODB_URL="mongodb://username:password@your-mongo-host:27017/vlan_manager?authSource=admin"
-export DATABASE_NAME="vlan_manager"
 export SITES="site1,site2,site3"
 export SITE_PREFIXES="site1:192,site2:193,site3:194"
+export DATA_DIR="./data"           # Optional: defaults to /app/data
+export HA_MODE="false"              # Optional: enable HA dual-write mode
 
 # Run application
 python main.py
 ```
 
-### Option 2: Container Deployment
+### Option 2: Container Deployment (Single-Write Mode)
 ```bash
 # Build container image
 podman build -t vlan-manager .
 
-# Run with environment variables
+# Run with persistent storage
 podman run -d \
   --name vlan-manager \
   -p 8000:8000 \
-  -e MONGODB_URL="mongodb://user:pass@mongo-host:27017/vlan_manager?authSource=admin" \
+  -v ./data:/app/data:Z \
   -e SITES="site1,site2,site3" \
   -e SITE_PREFIXES="site1:192,site2:193,site3:194" \
   vlan-manager
 ```
 
-### Option 3: Air-Gapped Deployment
+### Option 3: High Availability (HA) Mode
+```bash
+# Run with dual-write to primary and backup storage
+podman run -d \
+  --name vlan-manager-ha \
+  -p 8000:8000 \
+  -v ./data:/app/data:Z \
+  -v ./backup:/app/backup:Z \
+  -e HA_MODE="true" \
+  -e SITES="site1,site2,site3" \
+  -e SITE_PREFIXES="site1:192,site2:193,site3:194" \
+  vlan-manager
+```
+
+### Option 4: Air-Gapped Deployment
 ```bash
 # On connected system - build and save image
 ./deploy/scripts/build-and-save.sh
@@ -131,19 +147,21 @@ Access the application at **http://localhost:8000**
 
 ### Environment Variables
 ```bash
-# MongoDB Connection (Required)
-MONGODB_URL="mongodb://username:password@host:port/database?authSource=admin"
-DATABASE_NAME="vlan_manager"
-
 # Site Configuration (Required)
 SITES="site1,site2,site3"
 
-# Site IP Prefix Validation (Optional)
+# Site IP Prefix Validation (Required)
 SITE_PREFIXES="site1:192,site2:193,site3:194"
+
+# Storage Configuration (Optional)
+DATA_DIR="/app/data"              # Primary storage location
+BACKUP_DIR="/app/backup"          # Backup storage location (HA mode only)
+HA_MODE="false"                   # Enable High Availability dual-write mode
 
 # Server Configuration (Optional)
 SERVER_HOST="0.0.0.0"
 SERVER_PORT="8000"
+LOG_LEVEL="INFO"                  # Logging level (DEBUG, INFO, WARNING, ERROR)
 ```
 
 ### Site IP Validation & Startup Configuration
@@ -169,24 +187,26 @@ SITES="site1,site2,site3,site4"
 SITE_PREFIXES="site1:192,site2:193,site3:194,site4:195"
 ```
 
-### MongoDB Setup
-The application automatically creates comprehensive database indexes on startup for optimal performance:
+### Storage Architecture
 
-**Core Indexes:**
-- Unique index on `(site, vlan_id)` - Prevents duplicate VLANs per site
-- Index on `cluster_name` - Basic allocation queries
-- Index on `(site, released)` - Availability queries
-- Index on `epg_name` - EPG-based searches
+#### Single-Write Mode (Default)
+- Data stored in JSON file at `DATA_DIR/segments.json`
+- Thread-safe operations using file locking
+- Atomic writes using temporary file + rename pattern
+- Suitable for single-instance deployments
 
-**Optimized Compound Indexes:**
-- `(site, cluster_name, vlan_id)` - Perfect for allocation queries with sorting
-- `(cluster_name, site, released)` - Existing allocation checks
-- `(cluster_name, vlan_id)` - Global filtering with sorting
-- `(site, cluster_name, released)` - Statistics calculations
+#### High Availability (HA) Mode
+- Dual-write to both primary (`DATA_DIR`) and backup (`BACKUP_DIR`) locations
+- Independent file locks prevent race conditions
+- Automatic fallback: reads from backup if primary fails
+- Auto-recovery: restores primary from backup on failure
+- Parallel writes minimize performance impact (~40-50% overhead)
+- Continue on partial success (warnings logged)
+- Health endpoint reports sync status
 
-**Timestamp Indexes:**
-- `(allocated_at)` - Allocation time queries
-- `(released_at)` - Release time queries
+**Use Cases:**
+- **Single-Write**: Development, testing, single-pod deployments
+- **HA Mode**: Production, Kubernetes with multiple PVCs, critical workloads
 
 ## 🚀 CI/CD Pipeline
 
@@ -249,15 +269,25 @@ See [CI-CD-README.md](CI-CD-README.md) for complete pipeline documentation.
 # Build image
 podman build -t vlan-manager .
 
-# Run with custom configuration
+# Run with persistent storage
 podman run -d \
   --name vlan-manager \
   -p 8000:8000 \
-  -e MONGODB_URL="your-connection-string" \
-  -e DATABASE_NAME="vlan_manager" \
+  -v ./data:/app/data:Z \
   -e SITES="site1,site2,site3" \
   -e SITE_PREFIXES="site1:192,site2:193,site3:194" \
-  -v ./logs:/app/logs \
+  --restart unless-stopped \
+  vlan-manager
+
+# Run in HA mode with dual storage
+podman run -d \
+  --name vlan-manager-ha \
+  -p 8000:8000 \
+  -v ./data:/app/data:Z \
+  -v ./backup:/app/backup:Z \
+  -e HA_MODE="true" \
+  -e SITES="site1,site2,site3" \
+  -e SITE_PREFIXES="site1:192,site2:193,site3:194" \
   --restart unless-stopped \
   vlan-manager
 ```
@@ -275,30 +305,48 @@ Container includes comprehensive health checks:
 - **Timeout**: 10 seconds  
 - **Start Period**: 60 seconds
 
-**Sample Health Response:**
+**Sample Health Response (HA Mode):**
 ```json
 {
   "status": "healthy",
-  "timestamp": "2025-09-29T20:39:36.634379",
-  "database": "connected",
-  "total_segments": 36,
-  "sites_summary": {
-    "site1": {"total": 23, "allocated": 11, "available": 12, "utilization": 47.8},
-    "site2": {"total": 7, "allocated": 3, "available": 4, "utilization": 42.9},
-    "site3": {"total": 6, "allocated": 3, "available": 3, "utilization": 50.0}
+  "timestamp": "2025-10-30T13:56:06.644223",
+  "sites": ["site1", "site2", "site3"],
+  "storage_type": "ha_json_file",
+  "ha_mode": true,
+  "storage": {
+    "primary": {
+      "path": "/app/data/segments.json",
+      "exists": true,
+      "readable": true,
+      "writable": true
+    },
+    "backup": {
+      "path": "/app/backup/segments.json",
+      "exists": true,
+      "readable": true,
+      "writable": true
+    },
+    "in_sync": true,
+    "status": "accessible"
   },
-  "database_operations": "working",
+  "total_segments": 3,
+  "sites_summary": {
+    "site1": {"total": 1, "allocated": 0, "available": 1, "utilization": 0.0},
+    "site2": {"total": 1, "allocated": 1, "available": 0, "utilization": 100.0},
+    "site3": {"total": 1, "allocated": 0, "available": 1, "utilization": 0.0}
+  },
+  "storage_operations": "working",
   "system_summary": {
     "configured_sites": 3,
-    "total_segments": 36,
-    "average_segments_per_site": 12.0
+    "total_segments": 3,
+    "average_segments_per_site": 1.0
   }
 }
 ```
 
 ## 🔒 Air-Gapped Deployment
 
-Perfect for isolated networks with external MongoDB access.
+Perfect for isolated networks. All data stored locally in JSON files.
 
 ### 1. Connected Environment (Build & Save)
 ```bash
@@ -318,7 +366,7 @@ Copy these files:
 ```bash
 # Configure environment
 cp .env.example .env
-vi .env  # Add your MongoDB connection details
+vi .env  # Set SITES, SITE_PREFIXES, and optionally HA_MODE
 
 # Deploy
 ./load-and-run.sh [tag]
@@ -335,11 +383,18 @@ Complete Helm chart included for enterprise deployments.
 
 ### Installation
 ```bash
-# Basic deployment
+# Basic deployment (single-write mode)
 helm install vlan-manager ./deploy/helm \
-  --set mongodb.secret.url="mongodb://user:pass@mongo:27017/vlan_manager?authSource=admin" \
   --set config.sites="site1,site2,site3" \
-  --set config.sitePrefixes="site1:192,site2:193,site3:194"
+  --set config.sitePrefixes="site1:192,site2:193,site3:194" \
+  --set persistence.enabled=true
+
+# HA deployment with dual-write mode
+helm install vlan-manager ./deploy/helm \
+  --set config.sites="site1,site2,site3" \
+  --set config.sitePrefixes="site1:192,site2:193,site3:194" \
+  --set config.haMode="true" \
+  --set persistence.enabled=true
 
 # Production deployment with custom values
 helm install vlan-manager ./deploy/helm -f production-values.yaml
@@ -350,11 +405,12 @@ helm install vlan-manager ./deploy/helm -f production-values.yaml
 # Create project
 oc new-project vlan-manager
 
-# Deploy
+# Deploy with HA mode
 helm install vlan-manager ./deploy/helm \
-  --set mongodb.secret.url="mongodb://user:pass@mongodb:27017/vlan_manager?authSource=admin" \
   --set config.sites="site1,site2,site3" \
-  --set config.sitePrefixes="site1:192,site2:193,site3:194"
+  --set config.sitePrefixes="site1:192,site2:193,site3:194" \
+  --set config.haMode="true" \
+  --set persistence.enabled=true
 
 # Expose route
 oc expose service vlan-manager
@@ -382,8 +438,9 @@ source venv/bin/activate  # Linux/Mac
 pip install -r requirements.txt
 
 # Set environment variables
-export MONGODB_URL="your-connection-string"
 export SITES="site1,site2,site3"
+export SITE_PREFIXES="site1:192,site2:193,site3:194"
+export DATA_DIR="./data"
 
 # Run in development mode
 python main.py
@@ -440,13 +497,17 @@ curl http://localhost:8000/api/stats
 
 ### Common Issues
 
-#### MongoDB Connection Failed
+#### Storage Not Accessible
 ```bash
-# Check connectivity
+# Check health status
 curl http://localhost:8000/api/health
 
-# Verify MongoDB URL format
-MONGODB_URL="mongodb://user:pass@host:port/db?authSource=admin"
+# Verify data directory exists and is writable
+ls -la /app/data
+ls -la /app/backup  # If using HA mode
+
+# Check file permissions
+podman exec vlan-manager ls -la /app/data
 ```
 
 #### Container Won't Start
@@ -455,7 +516,7 @@ MONGODB_URL="mongodb://user:pass@host:port/db?authSource=admin"
 podman logs vlan-manager
 
 # Verify environment variables
-podman exec vlan-manager env | grep MONGODB
+podman exec vlan-manager env | grep -E "SITES|DATA_DIR|HA_MODE"
 ```
 
 #### Port Already in Use
@@ -499,18 +560,25 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🏷️ Version History
 
+- **v3.0.0**: JSON Storage Migration with High Availability
+  - Migrated from MongoDB to JSON file storage
+  - High Availability (HA) dual-write mode
+  - Atomic file operations with locking
+  - PVC support for Kubernetes/OpenShift
+  - Automatic fallback and recovery in HA mode
+  - Enhanced health monitoring with storage sync status
+
 - **v2.0.0**: Enhanced validation and filtering features
   - Site-specific IP prefix validation
   - Advanced segment filtering by site and status
   - CSV/Excel export capabilities with filtering
   - Improved error handling and user feedback
   - Enhanced responsive UI design
-  - Optimized container image (347MB)
 
 - **v1.0.0**: Initial release with core VLAN management features
   - Web UI with dark mode
   - RESTful API
-  - MongoDB integration  
+  - MongoDB integration
   - Container deployment
   - Air-gapped deployment support
   - Helm chart for Kubernetes/OpenShift

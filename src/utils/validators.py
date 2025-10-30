@@ -1,7 +1,6 @@
 import logging
 from typing import Dict, Any
 from fastapi import HTTPException
-from bson import ObjectId
 
 from ..config.settings import SITES
 
@@ -9,7 +8,7 @@ logger = logging.getLogger(__name__)
 
 class Validators:
     """Validation utilities"""
-    
+
     @staticmethod
     def validate_site(site: str) -> None:
         """Validate if site is in configured sites"""
@@ -17,22 +16,22 @@ class Validators:
         if site not in SITES:
             logger.warning(f"Invalid site requested: {site}, valid sites: {SITES}")
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail=f"Invalid site. Must be one of: {SITES}"
             )
         logger.info(f"Site validation passed: {site}")
-    
+
     @staticmethod
     def validate_object_id(object_id: str) -> None:
-        """Validate ObjectId format"""
-        logger.info(f"Validating ObjectId: {object_id}")
-        if not ObjectId.is_valid(object_id):
-            logger.warning(f"Invalid ObjectId format: {object_id}")
+        """Validate ID format (simple validation for string IDs)"""
+        logger.info(f"Validating ID: {object_id}")
+        if not object_id or not isinstance(object_id, str):
+            logger.warning(f"Invalid ID format: {object_id}")
             raise HTTPException(
-                status_code=400, 
+                status_code=400,
                 detail="Invalid ID format"
             )
-        logger.info(f"ObjectId validation passed: {object_id}")
+        logger.info(f"ID validation passed: {object_id}")
     
     @staticmethod
     def validate_segment_not_allocated(segment: Dict[str, Any]) -> None:
