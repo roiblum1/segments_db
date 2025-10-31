@@ -224,22 +224,15 @@ class NetBoxStorage:
                 prefix_data["vlan"] = vlan_obj.id
                 logger.debug(f"VLAN ID: {vlan_obj.id}")
 
-            # Store metadata in comments field (no custom fields needed)
-            # Format: EPG:name|CLUSTER:name|ALLOCATED_AT:timestamp|RELEASED:bool
-            metadata_parts = []
-            if document.get("epg_name"):
-                metadata_parts.append(f"EPG:{document['epg_name']}")
-            if document.get("cluster_name"):
-                metadata_parts.append(f"CLUSTER:{document['cluster_name']}")
-            if document.get("allocated_at"):
-                metadata_parts.append(f"ALLOCATED_AT:{document['allocated_at']}")
-            if document.get("released") is not None:
-                metadata_parts.append(f"RELEASED:{document['released']}")
-            if document.get("released_at"):
-                metadata_parts.append(f"RELEASED_AT:{document['released_at']}")
+            # Comments field is left empty for user notes
+            # Users can add their own information like:
+            #   - Network team contact info
+            #   - Change ticket numbers
+            #   - Maintenance windows
+            #   - Special instructions
 
-            if metadata_parts:
-                prefix_data["comments"] = " | ".join(metadata_parts)
+            # Store minimal internal metadata in custom_fields if needed
+            # For now, we only use STATUS and DESCRIPTION for visible info
 
             # Create prefix in NetBox
             logger.debug(f"Creating prefix with data: {prefix_data}")
@@ -282,25 +275,8 @@ class NetBoxStorage:
                 if "description" in updates:
                     prefix.description = updates["description"]
 
-                # Update comments field with metadata
-                # Parse existing comments
-                metadata = {}
-                comments = getattr(prefix, 'comments', '') or ''
-                if comments:
-                    for part in comments.split(' | '):
-                        if ':' in part:
-                            key, value = part.split(':', 1)
-                            metadata[key.upper()] = value
-
-                # Apply updates to metadata
-                for field in ["cluster_name", "allocated_at", "released", "released_at", "epg_name"]:
-                    if field in updates:
-                        key = field.replace("_name", "").replace("_at", "_AT").upper()
-                        metadata[key] = str(updates[field])
-
-                # Rebuild comments
-                metadata_parts = [f"{k}:{v}" for k, v in metadata.items()]
-                prefix.comments = " | ".join(metadata_parts) if metadata_parts else ""
+                # Comments field is preserved for user notes - we don't touch it
+                # All metadata goes into STATUS and DESCRIPTION columns
 
                 # Update prefix status and description based on allocation
                 if "cluster_name" in updates and updates["cluster_name"]:
@@ -395,53 +371,15 @@ class NetBoxStorage:
         """Convert NetBox prefix object to our segment format
 
         Note: In NetBox, the site is associated with the VLAN, not the prefix directly.
-        We extract the site from the VLAN object.
+        Metadata is extracted from STATUS and DESCRIPTION fields, not comments.
+        Comments field is left free for user notes.
         """
-        # Parse metadata from comments field
-        # Format: EPG:name|CLUSTER:name|ALLOCATED:timestamp|RELEASED:bool
-        metadata = {}
-        comments = getattr(prefix, 'comments', '') or ''
-
-        if comments:
-            for part in comments.split(' | '):
-                if ':' in part:
-                    key, value = part.split(':', 1)
-                    metadata[key.lower()] = value
-
-        # Parse released as boolean
-        released = False
-        if 'released' in metadata:
-            released = metadata['released'].lower() in ('true', '1', 'yes')
-
-        # Parse allocated_at as datetime
-        allocated_at = None
-        if 'allocated_at' in metadata:
-            try:
-                from datetime import datetime
-                # Parse ISO format datetime string to datetime object
-                allocated_str = metadata['allocated_at']
-                if allocated_str and allocated_str != 'None':
-                    allocated_at = datetime.fromisoformat(allocated_str.replace('Z', '+00:00'))
-            except Exception as e:
-                # If parsing fails, keep as None
-                logger.debug(f"Failed to parse allocated_at: {metadata.get('allocated_at')}, error: {e}")
-                allocated_at = None
-
-        # Parse released_at as datetime
-        released_at = None
-        if 'released_at' in metadata:
-            try:
-                from datetime import datetime
-                released_str = metadata['released_at']
-                if released_str and released_str != 'None':
-                    released_at = datetime.fromisoformat(released_str.replace('Z', '+00:00'))
-            except Exception as e:
-                logger.debug(f"Failed to parse released_at: {metadata.get('released_at')}, error: {e}")
-                released_at = None
+        from datetime import datetime, timezone
 
         # Extract site and VLAN ID from VLAN object
         site_slug = None
         vlan_id = None
+        epg_name = ""
 
         if hasattr(prefix, 'vlan') and prefix.vlan:
             # prefix.vlan is already a VLAN Record object in pynetbox
@@ -451,18 +389,43 @@ class NetBoxStorage:
             if hasattr(vlan_obj, 'vid'):
                 vlan_id = vlan_obj.vid
 
+            # Get EPG name from VLAN name
+            if hasattr(vlan_obj, 'name'):
+                epg_name = vlan_obj.name
+
             # Get site from VLAN
             if hasattr(vlan_obj, 'site') and vlan_obj.site:
                 site_slug = vlan_obj.site.slug if hasattr(vlan_obj.site, 'slug') else None
+
+        # Extract metadata from STATUS and DESCRIPTION
+        status_val = prefix.status.value if hasattr(prefix.status, 'value') else str(prefix.status).lower()
+        description = getattr(prefix, 'description', '') or ""
+
+        # Determine if allocated or released based on STATUS
+        released = (status_val == 'active')
+
+        # Extract cluster name from description if allocated
+        cluster_name = None
+        if status_val == 'reserved' and description.startswith('Cluster: '):
+            cluster_name = description.replace('Cluster: ', '').strip()
+
+        # For timestamps, we'll use current time as approximation
+        # (NetBox doesn't store these, so we set them when we update)
+        allocated_at = None
+        released_at = None
+
+        # If it's reserved, set allocated_at to now (approximation)
+        if status_val == 'reserved' and cluster_name:
+            allocated_at = datetime.now(timezone.utc)
 
         segment = {
             "_id": str(prefix.id),
             "site": site_slug,
             "vlan_id": vlan_id,
-            "epg_name": metadata.get("epg", ""),
+            "epg_name": epg_name,
             "segment": str(prefix.prefix),
-            "description": getattr(prefix, 'description', '') or "",
-            "cluster_name": metadata.get("cluster"),
+            "description": description if status_val == 'active' else description.replace(f'Cluster: {cluster_name}', '').strip() if cluster_name else description,
+            "cluster_name": cluster_name,
             "allocated_at": allocated_at,
             "released": released,
             "released_at": released_at,
