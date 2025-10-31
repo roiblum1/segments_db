@@ -189,6 +189,13 @@ class NetBoxStorage:
             logger.debug(f"Creating NetBox prefix for document: {document}")
 
             # Prepare prefix data
+            # Note: description field can contain free-form info like:
+            #   - DHCP enabled: "DHCP Pool: 192.168.1.10-100"
+            #   - Gateway info: "Gateway: 192.168.1.1"
+            #   - DNS info: "DNS: 10.0.0.1, 10.0.0.2"
+            #   - Security: "Firewall Zone: DMZ"
+            #   - Location: "Datacenter: DC1, Rack: A-01"
+            #   - Environment: "Production", "Development", "Testing"
             prefix_data = {
                 "prefix": document["segment"],
                 "description": document.get("description", ""),
