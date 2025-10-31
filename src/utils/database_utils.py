@@ -3,7 +3,7 @@ from typing import Optional, List, Dict, Any
 from datetime import datetime, timezone
 
 from ..config.settings import SITES
-from ..database.json_storage import get_storage
+from ..database.netbox_storage import get_storage
 
 logger = logging.getLogger(__name__)
 

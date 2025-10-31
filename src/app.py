@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config.settings import setup_logging, SITES, validate_site_prefixes
 from .api.routes import router
-from .database.json_storage import init_storage, close_storage
+from .database.netbox_storage import init_storage, close_storage
 import os
 
 # Setup logging
@@ -23,7 +23,7 @@ async def lifespan(app: FastAPI):
         logger.info("Site prefixes validation passed")
 
         await init_storage()
-        logger.info(f"JSON storage initialized. Managing sites: {SITES}")
+        logger.info(f"NetBox storage initialized. Managing sites: {SITES}")
     except Exception as e:
         logger.error(f"Failed to initialize application: {e}")
         raise

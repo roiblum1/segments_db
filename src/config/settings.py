@@ -2,8 +2,10 @@ import os
 import logging
 import sys
 
-# Data Storage Configuration
-DATA_DIR = os.getenv("DATA_DIR", "/app/data")
+# NetBox Configuration
+NETBOX_URL = os.getenv("NETBOX_URL", "https://srcc3192.cloud.netboxapp.com")
+NETBOX_TOKEN = os.getenv("NETBOX_TOKEN", "892ee583fa47f1682ef258f8df00fbeea11f6ebc")
+NETBOX_SSL_VERIFY = os.getenv("NETBOX_SSL_VERIFY", "true").lower() in ("true", "1", "yes")
 
 # Sites Configuration
 SITES = os.getenv("SITES", "site1,site2,site3").split(",")

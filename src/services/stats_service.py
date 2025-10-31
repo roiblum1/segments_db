@@ -35,32 +35,25 @@ class StatsService:
     @staticmethod
     async def health_check() -> Dict[str, Any]:
         """Enhanced health check endpoint with comprehensive system validation"""
-        from ..database.json_storage import get_storage
-        import os
+        from ..database.netbox_storage import get_netbox_client
+        from ..config.settings import NETBOX_URL
 
         health_data = {
             "status": "healthy",
             "timestamp": datetime.now().isoformat(),
             "sites": SITES,
-            "storage_type": "json_file"
+            "storage_type": "netbox",
+            "netbox_url": NETBOX_URL
         }
 
         try:
-            # Check JSON storage accessibility
-            storage = get_storage()
-            data_file = storage.data_file
+            # Check NetBox connectivity
+            nb = get_netbox_client()
+            status = nb.status()
 
-            # Verify data file exists and is readable
-            if os.path.exists(data_file):
-                health_data["storage"] = "accessible"
-                health_data["storage_path"] = str(data_file)
-
-                # Check file permissions
-                health_data["storage_readable"] = os.access(data_file, os.R_OK)
-                health_data["storage_writable"] = os.access(data_file, os.W_OK)
-            else:
-                health_data["storage"] = "not_found"
-                health_data["storage_path"] = str(data_file)
+            health_data["storage"] = "accessible"
+            health_data["netbox_version"] = status.get("netbox-version")
+            health_data["netbox_status"] = "connected"
 
             # Test database operations - Get total segments count
             total_segments = 0
