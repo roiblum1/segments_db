@@ -97,38 +97,78 @@ class NetBoxStorage:
         - {"site": "site1"} - All segments for site1
         - {"cluster_name": "cluster1", "released": False} - Allocated to cluster1
         - {"vlan_id": 100} - VLAN 100
+
+        Note: In NetBox, sites are associated with VLANs, not directly with prefixes.
         """
         loop = asyncio.get_event_loop()
 
-        # Build NetBox filter
+        # Build NetBox filter for prefixes
+        # Note: We can't filter by site at the prefix level since prefixes don't have sites
+        # We'll fetch all prefixes and filter in-memory based on VLAN's site
         nb_filter = {}
 
-        if query:
-            if "site" in query:
-                nb_filter["site"] = query["site"]
-            if "vlan_id" in query:
-                nb_filter["vlan_vid"] = query["vlan_id"]
-            # For complex queries, we'll filter in-memory after fetching
+        # We can only filter by VLAN VID at the API level
+        if query and "vlan_id" in query:
+            nb_filter["vlan_vid"] = query["vlan_id"]
 
         # Fetch prefixes from NetBox
-        prefixes = await loop.run_in_executor(
-            None,
-            lambda: list(self.nb.ipam.prefixes.filter(**nb_filter))
-        )
+        if nb_filter:
+            prefixes = await loop.run_in_executor(
+                None,
+                lambda: list(self.nb.ipam.prefixes.filter(**nb_filter))
+            )
+        else:
+            # Fetch all prefixes
+            prefixes = await loop.run_in_executor(
+                None,
+                lambda: list(self.nb.ipam.prefixes.all())
+            )
 
-        # Convert NetBox prefixes to our segment format
+        # Convert NetBox prefixes to our segment format and apply filters
         segments = []
         for prefix in prefixes:
             segment = self._prefix_to_segment(prefix)
 
-            # Apply additional in-memory filters
+            # Apply in-memory filters
             if query:
-                if "cluster_name" in query and segment.get("cluster_name") != query["cluster_name"]:
+                # Site filter - check the site from the VLAN
+                if "site" in query and segment.get("site") != query["site"]:
                     continue
+
+                # Cluster name filter - exact match or regex
+                if "cluster_name" in query:
+                    cluster_value = query["cluster_name"]
+                    if isinstance(cluster_value, dict) and "$regex" in cluster_value:
+                        # Regex match
+                        import re
+                        pattern = cluster_value["$regex"]
+                        if not re.search(pattern, segment.get("cluster_name") or ""):
+                            continue
+                    elif isinstance(cluster_value, dict) and "$ne" in cluster_value:
+                        # Not equal
+                        if segment.get("cluster_name") == cluster_value["$ne"]:
+                            continue
+                    else:
+                        # Exact match
+                        if segment.get("cluster_name") != cluster_value:
+                            continue
+
+                # Released filter
                 if "released" in query and segment.get("released") != query["released"]:
                     continue
+
+                # ID filter
+                if "_id" in query:
+                    id_value = query["_id"]
+                    if isinstance(id_value, dict) and "$ne" in id_value:
+                        if segment.get("_id") == id_value["$ne"]:
+                            continue
+                    else:
+                        if segment.get("_id") != id_value:
+                            continue
+
+                # $or queries
                 if "$or" in query:
-                    # Handle $or queries
                     match = False
                     for or_condition in query["$or"]:
                         if all(segment.get(k) == v for k, v in or_condition.items()):
@@ -146,6 +186,8 @@ class NetBoxStorage:
         loop = asyncio.get_event_loop()
 
         try:
+            logger.debug(f"Creating NetBox prefix for document: {document}")
+
             # Prepare prefix data
             prefix_data = {
                 "prefix": document["segment"],
@@ -154,28 +196,36 @@ class NetBoxStorage:
             }
 
             # Add site if provided
-            if "site" in document:
+            if "site" in document and document["site"]:
+                logger.debug(f"Getting/creating site: {document['site']}")
                 site_obj = await self._get_or_create_site(document["site"])
+                if not site_obj:
+                    raise Exception(f"Failed to get/create site: {document['site']}")
                 prefix_data["site"] = site_obj.id
+                logger.debug(f"Site ID: {site_obj.id}")
 
             # Add VLAN if provided
-            if "vlan_id" in document:
+            if "vlan_id" in document and document["vlan_id"]:
+                logger.debug(f"Getting/creating VLAN: {document['vlan_id']}")
                 vlan_obj = await self._get_or_create_vlan(
                     document["vlan_id"],
                     document.get("epg_name", f"VLAN_{document['vlan_id']}"),
                     document.get("site")
                 )
+                if not vlan_obj:
+                    raise Exception(f"Failed to get/create VLAN: {document['vlan_id']}")
                 prefix_data["vlan"] = vlan_obj.id
+                logger.debug(f"VLAN ID: {vlan_obj.id}")
 
             # Store metadata in comments field (no custom fields needed)
-            # Format: EPG:name|CLUSTER:name|ALLOCATED:timestamp|RELEASED:bool
+            # Format: EPG:name|CLUSTER:name|ALLOCATED_AT:timestamp|RELEASED:bool
             metadata_parts = []
             if document.get("epg_name"):
                 metadata_parts.append(f"EPG:{document['epg_name']}")
             if document.get("cluster_name"):
                 metadata_parts.append(f"CLUSTER:{document['cluster_name']}")
             if document.get("allocated_at"):
-                metadata_parts.append(f"ALLOCATED:{document['allocated_at']}")
+                metadata_parts.append(f"ALLOCATED_AT:{document['allocated_at']}")
             if document.get("released") is not None:
                 metadata_parts.append(f"RELEASED:{document['released']}")
             if document.get("released_at"):
@@ -185,12 +235,14 @@ class NetBoxStorage:
                 prefix_data["comments"] = " | ".join(metadata_parts)
 
             # Create prefix in NetBox
+            logger.debug(f"Creating prefix with data: {prefix_data}")
             prefix = await loop.run_in_executor(
                 None,
                 lambda: self.nb.ipam.prefixes.create(**prefix_data)
             )
 
             logger.info(f"Created prefix in NetBox: {prefix.prefix} (ID: {prefix.id})")
+            logger.debug(f"Created prefix site: {getattr(prefix, 'site', 'NO-SITE')}")
 
             # Return in our format
             return self._prefix_to_segment(prefix)
@@ -282,18 +334,46 @@ class NetBoxStorage:
     async def find_one_and_update(
         self,
         query: Dict[str, Any],
-        update: Dict[str, Any]
+        update: Dict[str, Any],
+        sort: Optional[List[tuple]] = None
     ) -> Optional[Dict[str, Any]]:
-        """Find and update a segment atomically"""
-        segment = await self.find_one(query)
-        if segment:
-            await self.update_one(query, update)
-            # Return updated segment
-            return await self.find_one(query)
-        return None
+        """Find and update a segment atomically
+
+        Args:
+            query: Query to find segment
+            update: Update operations
+            sort: Sort order as list of (field, direction) tuples
+                  1 = ascending, -1 = descending
+        """
+        # Find all matching segments
+        segments = await self.find(query)
+
+        if not segments:
+            return None
+
+        # Apply sorting if specified
+        if sort:
+            for field, direction in reversed(sort):
+                segments.sort(
+                    key=lambda x: x.get(field, 0),
+                    reverse=(direction == -1)
+                )
+
+        # Get first segment after sorting
+        segment = segments[0]
+
+        # Update it
+        await self.update_one({"_id": segment["_id"]}, update)
+
+        # Return updated segment
+        return await self.find_one({"_id": segment["_id"]})
 
     def _prefix_to_segment(self, prefix) -> Dict[str, Any]:
-        """Convert NetBox prefix object to our segment format"""
+        """Convert NetBox prefix object to our segment format
+
+        Note: In NetBox, the site is associated with the VLAN, not the prefix directly.
+        We extract the site from the VLAN object.
+        """
         # Parse metadata from comments field
         # Format: EPG:name|CLUSTER:name|ALLOCATED:timestamp|RELEASED:bool
         metadata = {}
@@ -310,17 +390,59 @@ class NetBoxStorage:
         if 'released' in metadata:
             released = metadata['released'].lower() in ('true', '1', 'yes')
 
+        # Parse allocated_at as datetime
+        allocated_at = None
+        if 'allocated_at' in metadata:
+            try:
+                from datetime import datetime
+                # Parse ISO format datetime string to datetime object
+                allocated_str = metadata['allocated_at']
+                if allocated_str and allocated_str != 'None':
+                    allocated_at = datetime.fromisoformat(allocated_str.replace('Z', '+00:00'))
+            except Exception as e:
+                # If parsing fails, keep as None
+                logger.debug(f"Failed to parse allocated_at: {metadata.get('allocated_at')}, error: {e}")
+                allocated_at = None
+
+        # Parse released_at as datetime
+        released_at = None
+        if 'released_at' in metadata:
+            try:
+                from datetime import datetime
+                released_str = metadata['released_at']
+                if released_str and released_str != 'None':
+                    released_at = datetime.fromisoformat(released_str.replace('Z', '+00:00'))
+            except Exception as e:
+                logger.debug(f"Failed to parse released_at: {metadata.get('released_at')}, error: {e}")
+                released_at = None
+
+        # Extract site and VLAN ID from VLAN object
+        site_slug = None
+        vlan_id = None
+
+        if hasattr(prefix, 'vlan') and prefix.vlan:
+            # prefix.vlan is already a VLAN Record object in pynetbox
+            vlan_obj = prefix.vlan
+
+            # Get VLAN VID (the VLAN number like 100, 101)
+            if hasattr(vlan_obj, 'vid'):
+                vlan_id = vlan_obj.vid
+
+            # Get site from VLAN
+            if hasattr(vlan_obj, 'site') and vlan_obj.site:
+                site_slug = vlan_obj.site.slug if hasattr(vlan_obj.site, 'slug') else None
+
         segment = {
             "_id": str(prefix.id),
-            "site": prefix.site.slug if prefix.site else None,
-            "vlan_id": prefix.vlan.vid if prefix.vlan else None,
+            "site": site_slug,
+            "vlan_id": vlan_id,
             "epg_name": metadata.get("epg", ""),
             "segment": str(prefix.prefix),
-            "description": prefix.description or "",
+            "description": getattr(prefix, 'description', '') or "",
             "cluster_name": metadata.get("cluster"),
-            "allocated_at": metadata.get("allocated"),
+            "allocated_at": allocated_at,
             "released": released,
-            "released_at": metadata.get("released_at"),
+            "released_at": released_at,
         }
 
         return segment
@@ -329,14 +451,18 @@ class NetBoxStorage:
         """Get or create a site in NetBox"""
         loop = asyncio.get_event_loop()
 
-        # Try to get existing site
-        site = await loop.run_in_executor(
-            None,
-            lambda: self.nb.dcim.sites.get(slug=site_slug)
-        )
+        try:
+            # Try to get existing site
+            site = await loop.run_in_executor(
+                None,
+                lambda: self.nb.dcim.sites.get(slug=site_slug)
+            )
 
-        if not site:
+            if site:
+                return site
+
             # Create new site
+            logger.info(f"Creating new site in NetBox: {site_slug}")
             site = await loop.run_in_executor(
                 None,
                 lambda: self.nb.dcim.sites.create(
@@ -346,8 +472,11 @@ class NetBoxStorage:
                 )
             )
             logger.info(f"Created site in NetBox: {site_slug}")
+            return site
 
-        return site
+        except Exception as e:
+            logger.error(f"Error getting/creating site {site_slug}: {e}")
+            raise
 
     async def _get_or_create_vlan(self, vlan_id: int, name: str, site_slug: Optional[str] = None):
         """Get or create a VLAN in NetBox"""
