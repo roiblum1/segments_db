@@ -6,7 +6,7 @@
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
 ![Version](https://img.shields.io/badge/version-v1.0.10-green.svg)
 
-A modern, containerized VLAN segment management system built with FastAPI and JSON file storage. Features responsive web UI with dark mode, RESTful API, automated CI/CD pipeline, comprehensive validation, enhanced health monitoring, and deployment options for both air-gapped environments and Kubernetes/OpenShift.
+A modern, containerized VLAN segment management system built with FastAPI and NetBox backend. Features responsive web UI with dark mode, RESTful API, NetBox IPAM integration, comprehensive validation, enhanced health monitoring, and deployment options for Kubernetes/OpenShift.
 
 ## ✨ Features
 
@@ -21,9 +21,10 @@ A modern, containerized VLAN segment management system built with FastAPI and JS
 - 📋 **Bulk Operations**: CSV import for mass segment creation with individual validation
 - 📁 **Log Viewing**: Built-in log file viewer via web interface
 - 🐳 **Container Ready**: Docker/Podman deployment with health checks and startup validation
-- 💾 **JSON File Storage**: Persistent local file storage with atomic operations and file locking
-- ☸️ **Kubernetes/OpenShift**: Complete Helm chart with PVC support
-- 🔒 **Air-Gapped Deployment**: Podman save/load workflow for isolated networks
+- 🔌 **NetBox Integration**: Uses NetBox as persistent storage backend with REST API
+- 📊 **Dual UI**: Your custom web UI + NetBox's professional IPAM interface
+- ☸️ **Kubernetes/OpenShift**: Complete Helm chart for enterprise deployments
+- 🔒 **Production Ready**: PostgreSQL backend via NetBox for scalability
 - 🚀 **CI/CD Pipeline**: Automated Docker builds with version management and artifact generation
 - ⚡ **Startup Validation**: Fail-fast configuration validation prevents runtime errors
 - 🔧 **Error Handling**: Clear error messages and proper conflict detection
@@ -35,7 +36,7 @@ A modern, containerized VLAN segment management system built with FastAPI and JS
 ├── src/                    # Application source code
 │   ├── api/               # FastAPI routes and endpoints
 │   ├── config/            # Configuration and logging setup
-│   ├── database/          # JSON storage operations with file locking
+│   ├── database/          # NetBox storage integration (pynetbox)
 │   ├── models/            # Pydantic data models
 │   ├── services/          # Business logic layer
 │   └── utils/             # Utilities and validators
@@ -61,9 +62,10 @@ A modern, containerized VLAN segment management system built with FastAPI and JS
 pip install -r requirements.txt
 
 # Configure environment
+export NETBOX_URL="https://your-netbox-instance.com"
+export NETBOX_TOKEN="your-api-token-here"
 export SITES="site1,site2,site3"
 export SITE_PREFIXES="site1:192,site2:193,site3:194"
-export DATA_DIR="./data"           # Optional: defaults to /app/data
 
 # Run application
 python main.py
@@ -74,11 +76,12 @@ python main.py
 # Build container image
 podman build -t vlan-manager .
 
-# Run with persistent storage
+# Run with NetBox backend
 podman run -d \
   --name vlan-manager \
   -p 8000:8000 \
-  -v ./data:/app/data:Z \
+  -e NETBOX_URL="https://your-netbox-instance.com" \
+  -e NETBOX_TOKEN="your-api-token-here" \
   -e SITES="site1,site2,site3" \
   -e SITE_PREFIXES="site1:192,site2:193,site3:194" \
   vlan-manager
@@ -131,14 +134,18 @@ Access the application at **http://localhost:8000**
 
 ### Environment Variables
 ```bash
+# NetBox Connection (Required)
+NETBOX_URL="https://your-netbox-instance.com"
+NETBOX_TOKEN="your-api-token-here"
+
+# NetBox SSL Verification (Optional)
+NETBOX_SSL_VERIFY="true"          # Set to false for self-signed certs
+
 # Site Configuration (Required)
 SITES="site1,site2,site3"
 
 # Site IP Prefix Validation (Required)
 SITE_PREFIXES="site1:192,site2:193,site3:194"
-
-# Storage Configuration (Optional)
-DATA_DIR="/app/data"              # Storage location
 
 # Server Configuration (Optional)
 SERVER_HOST="0.0.0.0"
@@ -169,13 +176,26 @@ SITES="site1,site2,site3,site4"
 SITE_PREFIXES="site1:192,site2:193,site3:194,site4:195"
 ```
 
-### Storage Architecture
+### Storage Architecture - NetBox Integration
 
-- Data stored in JSON file at `DATA_DIR/segments.json`
-- Thread-safe operations using file locking (filelock library)
-- Atomic writes using temporary file + rename pattern
-- Suitable for all deployment scenarios
-- Persistent storage via Docker volumes or Kubernetes PVCs
+**VLAN Manager acts as the intelligent API layer on top of NetBox:**
+
+- **Your API**: Handles business logic, validation, allocation rules, site prefix enforcement
+- **NetBox**: Provides persistent storage (PostgreSQL), REST API, and professional IPAM UI
+
+**Data Mapping:**
+- Segment → NetBox IP Prefix
+- VLAN ID → NetBox VLAN
+- Site → NetBox Site
+- EPG Name → Custom field on Prefix
+- Cluster allocation → Custom fields (cluster_name, allocated_at, etc.)
+
+**Benefits:**
+- Professional NetBox UI for viewing/managing VLANs and IP segments
+- PostgreSQL backend for better scalability than file storage
+- Multi-user support with NetBox permissions
+- Audit trail and change logging built into NetBox
+- Integration with NetBox's broader IPAM/DCIM ecosystem
 
 ## 🚀 CI/CD Pipeline
 
@@ -433,16 +453,18 @@ curl http://localhost:8000/api/stats
 
 ### Common Issues
 
-#### Storage Not Accessible
+#### NetBox Connection Issues
 ```bash
 # Check health status
 curl http://localhost:8000/api/health
 
-# Verify data directory exists and is writable
-ls -la /app/data
+# Response should show:
+# "storage_type": "netbox"
+# "netbox_status": "connected"
+# "netbox_version": "x.x.x"
 
-# Check file permissions
-podman exec vlan-manager ls -la /app/data
+# Test NetBox API directly
+curl -H "Authorization: Token YOUR_TOKEN" https://your-netbox-url/api/status/
 ```
 
 #### Container Won't Start
@@ -451,7 +473,7 @@ podman exec vlan-manager ls -la /app/data
 podman logs vlan-manager
 
 # Verify environment variables
-podman exec vlan-manager env | grep -E "SITES|DATA_DIR"
+podman exec vlan-manager env | grep -E "NETBOX|SITES"
 ```
 
 #### Port Already in Use
@@ -495,12 +517,13 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## 🏷️ Version History
 
-- **v3.0.0**: JSON Storage Migration
-  - Migrated from MongoDB to JSON file storage
-  - Atomic file operations with filelock library
-  - Thread-safe concurrent access
-  - PVC support for Kubernetes/OpenShift
-  - Simplified architecture with local file persistence
+- **v3.0.0**: NetBox Integration
+  - Integrated with NetBox as persistent storage backend
+  - PostgreSQL backend via NetBox for scalability
+  - Professional IPAM UI through NetBox
+  - Custom fields for cluster allocation metadata
+  - Dual UI: Custom web UI + NetBox IPAM interface
+  - Multi-user support and audit trails
 
 - **v2.0.0**: Enhanced validation and filtering features
   - Site-specific IP prefix validation

@@ -167,14 +167,22 @@ class NetBoxStorage:
                 )
                 prefix_data["vlan"] = vlan_obj.id
 
-            # Add custom fields for our metadata
-            prefix_data["custom_fields"] = {
-                "epg_name": document.get("epg_name", ""),
-                "cluster_name": document.get("cluster_name"),
-                "allocated_at": document.get("allocated_at"),
-                "released": document.get("released", False),
-                "released_at": document.get("released_at"),
-            }
+            # Store metadata in comments field (no custom fields needed)
+            # Format: EPG:name|CLUSTER:name|ALLOCATED:timestamp|RELEASED:bool
+            metadata_parts = []
+            if document.get("epg_name"):
+                metadata_parts.append(f"EPG:{document['epg_name']}")
+            if document.get("cluster_name"):
+                metadata_parts.append(f"CLUSTER:{document['cluster_name']}")
+            if document.get("allocated_at"):
+                metadata_parts.append(f"ALLOCATED:{document['allocated_at']}")
+            if document.get("released") is not None:
+                metadata_parts.append(f"RELEASED:{document['released']}")
+            if document.get("released_at"):
+                metadata_parts.append(f"RELEASED_AT:{document['released_at']}")
+
+            if metadata_parts:
+                prefix_data["comments"] = " | ".join(metadata_parts)
 
             # Create prefix in NetBox
             prefix = await loop.run_in_executor(
@@ -215,13 +223,25 @@ class NetBoxStorage:
                 if "description" in updates:
                     prefix.description = updates["description"]
 
-                # Update custom fields
-                if not hasattr(prefix, 'custom_fields'):
-                    prefix.custom_fields = {}
+                # Update comments field with metadata
+                # Parse existing comments
+                metadata = {}
+                comments = getattr(prefix, 'comments', '') or ''
+                if comments:
+                    for part in comments.split(' | '):
+                        if ':' in part:
+                            key, value = part.split(':', 1)
+                            metadata[key.upper()] = value
 
-                for field in ["cluster_name", "allocated_at", "released", "released_at"]:
+                # Apply updates to metadata
+                for field in ["cluster_name", "allocated_at", "released", "released_at", "epg_name"]:
                     if field in updates:
-                        prefix.custom_fields[field] = updates[field]
+                        key = field.replace("_name", "").replace("_at", "_AT").upper()
+                        metadata[key] = str(updates[field])
+
+                # Rebuild comments
+                metadata_parts = [f"{k}:{v}" for k, v in metadata.items()]
+                prefix.comments = " | ".join(metadata_parts) if metadata_parts else ""
 
                 # Save changes
                 await loop.run_in_executor(None, prefix.save)
@@ -274,20 +294,33 @@ class NetBoxStorage:
 
     def _prefix_to_segment(self, prefix) -> Dict[str, Any]:
         """Convert NetBox prefix object to our segment format"""
-        # Get custom fields safely
-        custom_fields = getattr(prefix, 'custom_fields', {}) or {}
+        # Parse metadata from comments field
+        # Format: EPG:name|CLUSTER:name|ALLOCATED:timestamp|RELEASED:bool
+        metadata = {}
+        comments = getattr(prefix, 'comments', '') or ''
+
+        if comments:
+            for part in comments.split(' | '):
+                if ':' in part:
+                    key, value = part.split(':', 1)
+                    metadata[key.lower()] = value
+
+        # Parse released as boolean
+        released = False
+        if 'released' in metadata:
+            released = metadata['released'].lower() in ('true', '1', 'yes')
 
         segment = {
             "_id": str(prefix.id),
             "site": prefix.site.slug if prefix.site else None,
             "vlan_id": prefix.vlan.vid if prefix.vlan else None,
-            "epg_name": custom_fields.get("epg_name", ""),
+            "epg_name": metadata.get("epg", ""),
             "segment": str(prefix.prefix),
             "description": prefix.description or "",
-            "cluster_name": custom_fields.get("cluster_name"),
-            "allocated_at": custom_fields.get("allocated_at"),
-            "released": custom_fields.get("released", False),
-            "released_at": custom_fields.get("released_at"),
+            "cluster_name": metadata.get("cluster"),
+            "allocated_at": metadata.get("allocated"),
+            "released": released,
+            "released_at": metadata.get("released_at"),
         }
 
         return segment
