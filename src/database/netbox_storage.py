@@ -189,16 +189,12 @@ class NetBoxStorage:
             logger.debug(f"Creating NetBox prefix for document: {document}")
 
             # Prepare prefix data
-            # Note: description field can contain free-form info like:
-            #   - DHCP enabled: "DHCP Pool: 192.168.1.10-100"
-            #   - Gateway info: "Gateway: 192.168.1.1"
-            #   - DNS info: "DNS: 10.0.0.1, 10.0.0.2"
-            #   - Security: "Firewall Zone: DMZ"
-            #   - Location: "Datacenter: DC1, Rack: A-01"
-            #   - Environment: "Production", "Development", "Testing"
+            # DESCRIPTION will be used for cluster name when allocated
+            # COMMENTS will store the user's info (DHCP, Gateway, etc.)
             prefix_data = {
                 "prefix": document["segment"],
-                "description": document.get("description", ""),
+                "description": "",  # Empty initially, will show cluster name when allocated
+                "comments": document.get("description", ""),  # User info goes in comments
                 "status": "active",
             }
 
@@ -224,15 +220,8 @@ class NetBoxStorage:
                 prefix_data["vlan"] = vlan_obj.id
                 logger.debug(f"VLAN ID: {vlan_obj.id}")
 
-            # Comments field is left empty for user notes
-            # Users can add their own information like:
-            #   - Network team contact info
-            #   - Change ticket numbers
-            #   - Maintenance windows
-            #   - Special instructions
-
-            # Store minimal internal metadata in custom_fields if needed
-            # For now, we only use STATUS and DESCRIPTION for visible info
+            # Note: Comments already populated with user info from description field above
+            # Description will show cluster name when allocated
 
             # Create prefix in NetBox
             logger.debug(f"Creating prefix with data: {prefix_data}")
@@ -271,12 +260,8 @@ class NetBoxStorage:
             if "$set" in update:
                 updates = update["$set"]
 
-                # Update basic fields
-                if "description" in updates:
-                    prefix.description = updates["description"]
-
                 # Comments field is preserved for user notes - we don't touch it
-                # All metadata goes into STATUS and DESCRIPTION columns
+                # It contains the original user info (DHCP, Gateway, etc.)
 
                 # Update prefix status and description based on allocation
                 if "cluster_name" in updates and updates["cluster_name"]:
@@ -285,14 +270,9 @@ class NetBoxStorage:
                     prefix.status = "reserved"
                     prefix.description = f"Cluster: {cluster_name}"
                 elif "released" in updates and updates["released"]:
-                    # Released: set status back to "active" and clear cluster from description
+                    # Released: set status back to "active" and clear description
                     prefix.status = "active"
-                    # Try to restore original description if it exists
-                    base_desc = segment.get("description", "")
-                    if base_desc and base_desc.startswith("Cluster: "):
-                        prefix.description = "Available for allocation"
-                    else:
-                        prefix.description = base_desc or "Available for allocation"
+                    prefix.description = ""  # Empty when available
 
                 # Save changes
                 await loop.run_in_executor(None, prefix.save)
@@ -399,15 +379,16 @@ class NetBoxStorage:
 
         # Extract metadata from STATUS and DESCRIPTION
         status_val = prefix.status.value if hasattr(prefix.status, 'value') else str(prefix.status).lower()
-        description = getattr(prefix, 'description', '') or ""
+        netbox_description = getattr(prefix, 'description', '') or ""
+        user_comments = getattr(prefix, 'comments', '') or ""
 
         # Determine if allocated or released based on STATUS
         released = (status_val == 'active')
 
         # Extract cluster name from description if allocated
         cluster_name = None
-        if status_val == 'reserved' and description.startswith('Cluster: '):
-            cluster_name = description.replace('Cluster: ', '').strip()
+        if status_val == 'reserved' and netbox_description.startswith('Cluster: '):
+            cluster_name = netbox_description.replace('Cluster: ', '').strip()
 
         # For timestamps, we'll use current time as approximation
         # (NetBox doesn't store these, so we set them when we update)
@@ -424,7 +405,7 @@ class NetBoxStorage:
             "vlan_id": vlan_id,
             "epg_name": epg_name,
             "segment": str(prefix.prefix),
-            "description": description if status_val == 'active' else description.replace(f'Cluster: {cluster_name}', '').strip() if cluster_name else description,
+            "description": user_comments,  # Return user comments as description for API
             "cluster_name": cluster_name,
             "allocated_at": allocated_at,
             "released": released,
