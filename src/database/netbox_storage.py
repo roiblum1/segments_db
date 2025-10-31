@@ -295,28 +295,19 @@ class NetBoxStorage:
                 metadata_parts = [f"{k}:{v}" for k, v in metadata.items()]
                 prefix.comments = " | ".join(metadata_parts) if metadata_parts else ""
 
-                # Update prefix description to show cluster allocation in NetBox UI
-                # This makes it visible in NetBox without needing to check comments
+                # Update prefix status and description based on allocation
                 if "cluster_name" in updates and updates["cluster_name"]:
+                    # Allocated: set status to "reserved" and description to cluster name
                     cluster_name = updates["cluster_name"]
-                    epg_name = metadata.get("EPG", "")
-                    base_desc = segment.get("description", "")
-
-                    # Format: "Original Description | Cluster: cluster-name | EPG: epg-name"
-                    if base_desc and not base_desc.startswith("ALLOCATED:"):
-                        prefix.description = f"ALLOCATED: {cluster_name} | EPG: {epg_name} | {base_desc}"
-                    else:
-                        prefix.description = f"ALLOCATED: {cluster_name} | EPG: {epg_name}"
+                    prefix.status = "reserved"
+                    prefix.description = f"Cluster: {cluster_name}"
                 elif "released" in updates and updates["released"]:
-                    # When released, restore original description
+                    # Released: set status back to "active" and clear cluster from description
+                    prefix.status = "active"
+                    # Try to restore original description if it exists
                     base_desc = segment.get("description", "")
-                    if base_desc and base_desc.startswith("ALLOCATED:"):
-                        # Try to extract original description
-                        parts = base_desc.split(" | ")
-                        if len(parts) > 2:
-                            prefix.description = parts[-1]
-                        else:
-                            prefix.description = "Available for allocation"
+                    if base_desc and base_desc.startswith("Cluster: "):
+                        prefix.description = "Available for allocation"
                     else:
                         prefix.description = base_desc or "Available for allocation"
 
