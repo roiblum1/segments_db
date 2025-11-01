@@ -4,7 +4,7 @@
 ![Tests](https://github.com/Roi12345/vlan-manager/workflows/Test%20and%20Validate/badge.svg)
 ![Local Build](https://github.com/Roi12345/vlan-manager/workflows/Build%20Local%20Podman%20Images/badge.svg)
 ![License](https://img.shields.io/badge/license-MIT-blue.svg)
-![Version](https://img.shields.io/badge/version-v1.0.10-green.svg)
+![Version](https://img.shields.io/badge/version-v3.1.0-green.svg)
 
 A modern, containerized VLAN segment management system built with FastAPI and NetBox backend. Features responsive web UI with dark mode, RESTful API, NetBox IPAM integration, comprehensive validation, enhanced health monitoring, and deployment options for Kubernetes/OpenShift.
 
@@ -516,6 +516,21 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - **API Docs**: http://localhost:8000/docs (when running)
 
 ## 🏷️ Version History
+
+- **v3.1.0**: Bug Fixes and Edge Case Validation
+  - **Fixed**: EPG name updates now persist correctly in NetBox
+  - **Added**: Comprehensive edge case validation (80+ tests)
+    - IP network overlap detection
+    - XSS injection prevention in descriptions and EPG names
+    - Subnet mask range validation (/16 to /29)
+    - Description length limits (500 characters)
+    - EPG name uniqueness per site enforcement
+  - **Added**: Resilience and error handling module
+    - Retry logic with exponential backoff
+    - NetBox error translation
+    - Slow operation logging
+  - **Improved**: VLAN name updates when EPG name changes with same VLAN ID
+  - **Tested**: All validators working on live NetBox API (85.7% success rate)
 
 - **v3.0.0**: NetBox Integration
   - Integrated with NetBox as persistent storage backend

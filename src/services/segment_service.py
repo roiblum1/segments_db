@@ -12,16 +12,43 @@ class SegmentService:
     """Service class for segment management operations"""
     
     @staticmethod
-    def _validate_segment_data(segment: Segment) -> None:
+    async def _validate_segment_data(segment: Segment, exclude_id: str = None) -> None:
         """Common validation for segment data"""
+        # Basic field validation
         Validators.validate_site(segment.site)
         Validators.validate_epg_name(segment.epg_name)
         Validators.validate_vlan_id(segment.vlan_id)
+
+        # Network validation
         Validators.validate_segment_format(segment.segment, segment.site)
         Validators.validate_subnet_mask(segment.segment)
         Validators.validate_no_reserved_ips(segment.segment)
+        Validators.validate_network_broadcast_gateway(segment.segment)
+
+        # Description validation (XSS protection)
         if segment.description:
             Validators.validate_description(segment.description)
+            Validators.validate_no_script_injection(segment.description, "description")
+
+        # EPG name XSS protection
+        Validators.validate_no_script_injection(segment.epg_name, "epg_name")
+
+        # IP overlap validation - get all existing segments
+        existing_segments = await DatabaseUtils.get_segments_with_filters()
+        if exclude_id:
+            # Exclude the segment being updated
+            existing_segments = [s for s in existing_segments if str(s.get("_id")) != str(exclude_id)]
+
+        Validators.validate_ip_overlap(segment.segment, existing_segments)
+
+        # EPG name uniqueness validation
+        Validators.validate_vlan_name_uniqueness(
+            site=segment.site,
+            epg_name=segment.epg_name,
+            vlan_id=segment.vlan_id,
+            existing_segments=existing_segments,
+            exclude_id=exclude_id
+        )
     
     @staticmethod
     def _segment_to_dict(segment: Segment) -> Dict[str, Any]:
@@ -72,7 +99,7 @@ class SegmentService:
         try:
             # Validate segment data
             logger.debug(f"DEBUG: Starting validation for segment {segment.vlan_id}")
-            SegmentService._validate_segment_data(segment)
+            await SegmentService._validate_segment_data(segment)
             logger.debug(f"DEBUG: Validation completed for segment {segment.vlan_id}")
             
             # Check if VLAN ID already exists for this site
@@ -133,8 +160,8 @@ class SegmentService:
             # Validate ObjectId format
             Validators.validate_object_id(segment_id)
             
-            # Validate segment data
-            SegmentService._validate_segment_data(updated_segment)
+            # Validate segment data (exclude self from overlap check)
+            await SegmentService._validate_segment_data(updated_segment, exclude_id=segment_id)
             
             # Check if segment exists
             existing_segment = await DatabaseUtils.get_segment_by_id(segment_id)
@@ -271,7 +298,7 @@ class SegmentService:
             for segment in segments:
                 try:
                     # Validate segment data
-                    SegmentService._validate_segment_data(segment)
+                    await SegmentService._validate_segment_data(segment)
                     
                     # Check if VLAN ID already exists for this site
                     if await DatabaseUtils.check_vlan_exists(segment.site, segment.vlan_id):

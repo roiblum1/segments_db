@@ -656,6 +656,13 @@ class NetBoxStorage:
                 lambda: self.nb.ipam.vlans.create(**vlan_data)
             )
             logger.info(f"Created VLAN in NetBox: {vlan_id} ({name})")
+        else:
+            # VLAN exists - check if name needs to be updated
+            if vlan.name != name:
+                logger.info(f"Updating VLAN name from '{vlan.name}' to '{name}' for VLAN ID {vlan_id}")
+                vlan.name = name
+                await loop.run_in_executor(None, vlan.save)
+                logger.info(f"Updated VLAN name to '{name}' for VLAN ID {vlan_id}")
 
         return vlan
 
