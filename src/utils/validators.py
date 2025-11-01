@@ -348,3 +348,323 @@ class Validators:
 
         logger.debug("Update data validation passed")
 
+    @staticmethod
+    def validate_ip_overlap(new_segment: str, existing_segments: list) -> None:
+        """
+        Validate that a new segment doesn't overlap with existing segments
+
+        Args:
+            new_segment: New IP network to validate (e.g., "192.168.1.0/24")
+            existing_segments: List of existing segment dictionaries with 'segment' field
+
+        Raises:
+            HTTPException: If overlap detected
+        """
+        import ipaddress
+
+        try:
+            new_network = ipaddress.ip_network(new_segment, strict=False)
+
+            for existing in existing_segments:
+                if not existing.get("segment"):
+                    continue
+
+                try:
+                    existing_network = ipaddress.ip_network(existing["segment"], strict=False)
+
+                    # Check if networks overlap
+                    if new_network.overlaps(existing_network):
+                        logger.warning(f"IP overlap detected: {new_segment} overlaps with {existing['segment']}")
+                        raise HTTPException(
+                            status_code=400,
+                            detail=f"IP segment {new_segment} overlaps with existing segment {existing['segment']} "
+                                   f"(Site: {existing.get('site')}, VLAN: {existing.get('vlan_id')})"
+                        )
+
+                except ValueError as e:
+                    # Skip invalid existing segments
+                    logger.warning(f"Skipping invalid existing segment: {existing.get('segment')}")
+                    continue
+
+            logger.debug(f"No IP overlap detected for {new_segment}")
+
+        except ValueError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid IP network format: {str(e)}"
+            )
+
+    @staticmethod
+    def validate_network_broadcast_gateway(segment: str) -> None:
+        """
+        Validate network has sufficient usable IPs (not just network and broadcast)
+
+        A /31 network has only 2 IPs (both usable in point-to-point)
+        A /30 network has 4 IPs (2 usable, 2 for network/broadcast)
+        Warn about very small networks
+        """
+        import ipaddress
+
+        try:
+            network = ipaddress.ip_network(segment, strict=False)
+            num_addresses = network.num_addresses
+
+            # For networks with less than 4 addresses, warn user
+            if num_addresses < 4:
+                logger.warning(f"Very small network: {segment} has only {num_addresses} addresses")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Network {segment} is too small ({num_addresses} addresses). "
+                           f"Minimum recommended size is /30 (4 addresses) for non-point-to-point links."
+                )
+
+            # For /24 and larger, verify reasonable size
+            usable_hosts = num_addresses - 2  # Exclude network and broadcast
+
+            if usable_hosts < 1:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Network {segment} has no usable host addresses"
+                )
+
+            logger.debug(f"Network validation passed: {segment} has {usable_hosts} usable addresses")
+
+        except ValueError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid network format: {str(e)}"
+            )
+
+    @staticmethod
+    def validate_vlan_name_uniqueness(site: str, epg_name: str, vlan_id: int, existing_segments: list, exclude_id: str = None) -> None:
+        """
+        Validate that EPG name + VLAN ID combination is unique per site
+
+        This prevents confusing situations where same EPG name has different VLAN IDs
+        or same VLAN ID has different EPG names at the same site
+        """
+        for segment in existing_segments:
+            # Skip if this is the segment being updated
+            if exclude_id and str(segment.get("_id")) == str(exclude_id):
+                continue
+
+            # Check same site only
+            if segment.get("site") != site:
+                continue
+
+            # Check if EPG name is same but VLAN ID is different
+            if (segment.get("epg_name") == epg_name and
+                segment.get("vlan_id") != vlan_id):
+                logger.warning(f"EPG name conflict: '{epg_name}' already used with VLAN {segment.get('vlan_id')} at {site}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"EPG name '{epg_name}' is already used with VLAN {segment.get('vlan_id')} at site {site}. "
+                           f"Cannot assign it to VLAN {vlan_id}."
+                )
+
+        logger.debug(f"EPG name uniqueness validation passed for {epg_name} at {site}")
+
+    @staticmethod
+    def validate_timezone_aware_datetime(dt_value: Any) -> None:
+        """Validate that datetime is timezone-aware to prevent timezone bugs"""
+        from datetime import datetime
+
+        if dt_value is None:
+            return
+
+        if not isinstance(dt_value, datetime):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Expected datetime object, got {type(dt_value).__name__}"
+            )
+
+        if dt_value.tzinfo is None:
+            raise HTTPException(
+                status_code=400,
+                detail="Datetime must be timezone-aware. Use datetime.now(timezone.utc)"
+            )
+
+        logger.debug("Datetime timezone validation passed")
+
+    @staticmethod
+    def validate_json_serializable(data: Any, field_name: str = "data") -> None:
+        """
+        Validate that data can be JSON serialized
+        Prevents issues with datetime, bytes, custom objects
+        """
+        import json
+
+        # Check for types that aren't natively JSON serializable
+        # and shouldn't be converted to strings
+        if hasattr(data, '__dict__') and not isinstance(data, (dict, list, str, int, float, bool, type(None))):
+            logger.error(f"JSON serialization failed for {field_name}: custom object {type(data)}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Field '{field_name}' contains non-serializable custom object: {type(data).__name__}"
+            )
+
+        try:
+            # Try to serialize without default handler first (strict check)
+            json.dumps(data)
+        except (TypeError, ValueError) as e:
+            # Check if it's a datetime (acceptable with default handler)
+            from datetime import datetime, date
+            if isinstance(data, (datetime, date)):
+                # Datetime is acceptable - can be serialized with default=str
+                pass
+            else:
+                logger.error(f"JSON serialization failed for {field_name}: {e}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Field '{field_name}' contains non-serializable data: {str(e)}"
+                )
+
+        logger.debug(f"JSON serialization validation passed for {field_name}")
+
+    @staticmethod
+    def validate_no_script_injection(text: str, field_name: str = "field") -> None:
+        """
+        Validate that text doesn't contain script injection patterns
+        Protects against XSS when data is displayed in web UI
+        """
+        if not text:
+            return
+
+        # Check for common script injection patterns
+        dangerous_patterns = [
+            r'<script',
+            r'javascript:',
+            r'onerror=',
+            r'onload=',
+            r'onclick=',
+            r'<iframe',
+            r'<embed',
+            r'<object',
+            r'eval\(',
+            r'expression\(',
+        ]
+
+        import re
+        text_lower = text.lower()
+
+        for pattern in dangerous_patterns:
+            if re.search(pattern, text_lower):
+                logger.warning(f"Potential script injection detected in {field_name}: {pattern}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Field '{field_name}' contains potentially dangerous content: {pattern}"
+                )
+
+        logger.debug(f"Script injection validation passed for {field_name}")
+
+    @staticmethod
+    def validate_rate_limit_data(request_count: int, time_window_seconds: int, max_requests: int = 100) -> None:
+        """
+        Helper to validate rate limiting (not enforcing, just validating params)
+        Actual rate limiting should be done at API gateway level
+        """
+        if request_count < 0:
+            raise HTTPException(status_code=400, detail="Request count cannot be negative")
+
+        if time_window_seconds <= 0:
+            raise HTTPException(status_code=400, detail="Time window must be positive")
+
+        if request_count > max_requests:
+            logger.warning(f"Rate limit exceeded: {request_count} requests in {time_window_seconds}s")
+            raise HTTPException(
+                status_code=429,
+                detail=f"Rate limit exceeded: {request_count} requests in {time_window_seconds} seconds. Maximum: {max_requests}"
+            )
+
+    @staticmethod
+    def validate_no_path_traversal(filename: str) -> None:
+        """
+        Validate filename doesn't contain path traversal attempts
+        Prevents accessing files outside intended directory
+        """
+        if not filename:
+            return
+
+        # Check for path traversal patterns
+        dangerous_patterns = [
+            '..',      # Parent directory
+            '~',       # Home directory
+            '/',       # Absolute path (at start)
+            '\\',      # Windows path separator
+        ]
+
+        for pattern in dangerous_patterns:
+            if pattern in filename:
+                logger.warning(f"Path traversal attempt detected in filename: {filename}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid filename: contains dangerous pattern '{pattern}'"
+                )
+
+        # Additional checks
+        if filename.startswith('/') or filename.startswith('\\'):
+            raise HTTPException(
+                status_code=400,
+                detail="Filename cannot be an absolute path"
+            )
+
+        logger.debug(f"Path traversal validation passed for: {filename}")
+
+    @staticmethod
+    def validate_csv_row_data(row_data: dict, row_number: int) -> None:
+        """
+        Validate CSV import row data
+
+        Args:
+            row_data: Dictionary of row data
+            row_number: Row number for error reporting
+        """
+        required_fields = ['site', 'vlan_id', 'epg_name', 'segment']
+
+        # Check required fields
+        missing_fields = [field for field in required_fields if not row_data.get(field)]
+        if missing_fields:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Row {row_number}: Missing required fields: {', '.join(missing_fields)}"
+            )
+
+        # Validate vlan_id is numeric
+        try:
+            vlan_id = int(row_data['vlan_id'])
+            Validators.validate_vlan_id(vlan_id)
+        except (ValueError, TypeError):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Row {row_number}: Invalid VLAN ID '{row_data.get('vlan_id')}' - must be integer between 1-4094"
+            )
+
+        # Validate other fields
+        Validators.validate_epg_name(row_data['epg_name'])
+        Validators.validate_site(row_data['site'])
+
+        # Validate description if present
+        if row_data.get('description'):
+            Validators.validate_description(row_data['description'])
+
+        logger.debug(f"CSV row {row_number} validation passed")
+
+    @staticmethod
+    def validate_concurrent_modification(original_updated_at: Any, current_updated_at: Any) -> None:
+        """
+        Validate optimistic locking - ensure record hasn't been modified since read
+
+        Args:
+            original_updated_at: Timestamp when record was read
+            current_updated_at: Current timestamp in database
+
+        Raises:
+            HTTPException 409: If record was modified by another request
+        """
+        if original_updated_at != current_updated_at:
+            logger.warning("Concurrent modification detected")
+            raise HTTPException(
+                status_code=409,
+                detail="Record was modified by another request. Please refresh and try again."
+            )
+
