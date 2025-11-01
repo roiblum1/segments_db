@@ -46,7 +46,7 @@ spec:
               containerPort: {{ .Values.service.targetPort }}
               protocol: TCP
           env:
-            # Environment variables from ConfigMap
+            # Site configuration from ConfigMap
             - name: SITES
               valueFrom:
                 configMapKeyRef:
@@ -57,11 +57,7 @@ spec:
                 configMapKeyRef:
                   name: {{ include "vlan-manager.fullname" . }}
                   key: SITE_PREFIXES
-            - name: DATA_DIR
-              valueFrom:
-                configMapKeyRef:
-                  name: {{ include "vlan-manager.fullname" . }}
-                  key: DATA_DIR
+            # Server configuration from ConfigMap
             - name: SERVER_HOST
               valueFrom:
                 configMapKeyRef:
@@ -77,6 +73,23 @@ spec:
                 configMapKeyRef:
                   name: {{ include "vlan-manager.fullname" . }}
                   key: LOG_LEVEL
+            # NetBox configuration from ConfigMap
+            - name: NETBOX_URL
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "vlan-manager.fullname" . }}
+                  key: NETBOX_URL
+            - name: NETBOX_SSL_VERIFY
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ include "vlan-manager.fullname" . }}
+                  key: NETBOX_SSL_VERIFY
+            # NetBox token from Secret
+            - name: NETBOX_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: {{ if .Values.netbox.existingSecret }}{{ .Values.netbox.existingSecret }}{{ else }}{{ include "vlan-manager.fullname" . }}-netbox{{ end }}
+                  key: {{ .Values.netbox.existingSecretKey }}
           {{- with .Values.startupProbe }}
           startupProbe:
             {{- toYaml . | nindent 12 }}
