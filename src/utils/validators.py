@@ -52,6 +52,24 @@ class Validators:
                 status_code=400,
                 detail="EPG name cannot be empty or contain only whitespace"
             )
+
+        # Additional edge cases
+        if len(epg_name) > 64:
+            logger.warning(f"EPG name too long: {len(epg_name)} characters")
+            raise HTTPException(
+                status_code=400,
+                detail=f"EPG name too long (max 64 characters, got {len(epg_name)})"
+            )
+
+        # Check for invalid characters (NetBox VLAN names have restrictions)
+        import re
+        if not re.match(r'^[a-zA-Z0-9_\-]+$', epg_name):
+            logger.warning(f"EPG name contains invalid characters: '{epg_name}'")
+            raise HTTPException(
+                status_code=400,
+                detail="EPG name can only contain letters, numbers, underscores, and hyphens"
+            )
+
         logger.info(f"EPG name validation passed: '{epg_name}'")
     
     @staticmethod
@@ -98,4 +116,71 @@ class Validators:
         except ipaddress.AddressValueError:
             logger.warning(f"Invalid IP network format: {segment}")
             raise HTTPException(status_code=400, detail="Invalid IP network format")
-    
+
+    @staticmethod
+    def validate_vlan_id(vlan_id: int) -> None:
+        """Validate VLAN ID is within valid range"""
+        logger.info(f"Validating VLAN ID: {vlan_id}")
+
+        if not isinstance(vlan_id, int):
+            raise HTTPException(
+                status_code=400,
+                detail=f"VLAN ID must be an integer, got {type(vlan_id).__name__}"
+            )
+
+        if vlan_id < 1 or vlan_id > 4094:
+            logger.warning(f"VLAN ID out of range: {vlan_id}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"VLAN ID must be between 1 and 4094 (got {vlan_id})"
+            )
+
+        # Reserved VLANs
+        if vlan_id == 1:
+            logger.warning("VLAN 1 is reserved (default VLAN)")
+
+        logger.info(f"VLAN ID validation passed: {vlan_id}")
+
+    @staticmethod
+    def validate_cluster_name(cluster_name: str) -> None:
+        """Validate cluster name format"""
+        logger.info(f"Validating cluster name: '{cluster_name}'")
+
+        if not cluster_name or not cluster_name.strip():
+            raise HTTPException(
+                status_code=400,
+                detail="Cluster name cannot be empty or contain only whitespace"
+            )
+
+        if len(cluster_name) > 100:
+            logger.warning(f"Cluster name too long: {len(cluster_name)} characters")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cluster name too long (max 100 characters, got {len(cluster_name)})"
+            )
+
+        # Allow letters, numbers, hyphens, underscores, dots (for FQDNs)
+        import re
+        if not re.match(r'^[a-zA-Z0-9_\-\.]+$', cluster_name):
+            logger.warning(f"Cluster name contains invalid characters: '{cluster_name}'")
+            raise HTTPException(
+                status_code=400,
+                detail="Cluster name can only contain letters, numbers, hyphens, underscores, and dots"
+            )
+
+        logger.info(f"Cluster name validation passed: '{cluster_name}'")
+
+    @staticmethod
+    def validate_description(description: str) -> None:
+        """Validate description field"""
+        logger.debug(f"Validating description: '{description[:50]}...'")
+
+        if description and len(description) > 500:
+            logger.warning(f"Description too long: {len(description)} characters")
+            raise HTTPException(
+                status_code=400,
+                detail=f"Description too long (max 500 characters, got {len(description)})"
+            )
+
+        logger.debug("Description validation passed")
+

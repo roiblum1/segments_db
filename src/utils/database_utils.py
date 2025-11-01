@@ -197,13 +197,27 @@ class DatabaseUtils:
     @staticmethod
     async def check_vlan_exists_excluding_id(site: str, vlan_id: int, exclude_id: str) -> bool:
         """Check if VLAN ID already exists for a site, excluding a specific segment ID"""
+        from ..config import settings
+        import logging
+        logger = logging.getLogger(__name__)
+
         storage = get_storage()
 
-        existing = await storage.find_one({
+        query = {
             "site": site,
             "vlan_id": vlan_id,
             "_id": {"$ne": exclude_id}
-        })
+        }
+
+        logger.debug(f"Checking VLAN existence: site={site}, vlan_id={vlan_id}, exclude_id={exclude_id}")
+
+        existing = await storage.find_one(query)
+
+        if existing:
+            logger.debug(f"Found existing VLAN: {existing.get('_id')} (excluding {exclude_id})")
+        else:
+            logger.debug(f"No conflicting VLAN found")
+
         return existing is not None
 
     @staticmethod
