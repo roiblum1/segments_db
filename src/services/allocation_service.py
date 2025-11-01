@@ -16,9 +16,10 @@ class AllocationService:
     async def allocate_vlan(request: VLANAllocationRequest) -> VLANAllocationResponse:
         """Allocate a VLAN segment for a cluster"""
         logger.info(f"Allocation request: cluster={request.cluster_name}, site={request.site}")
-        
-        # Validate site
+
+        # Validate inputs
         Validators.validate_site(request.site)
+        Validators.validate_cluster_name(request.cluster_name)
         
         try:
             # Check if cluster already has an allocation at this site

@@ -173,14 +173,178 @@ class Validators:
     @staticmethod
     def validate_description(description: str) -> None:
         """Validate description field"""
+        if not description:
+            # Empty descriptions are allowed
+            return
+
         logger.debug(f"Validating description: '{description[:50]}...'")
 
-        if description and len(description) > 500:
+        if len(description) > 500:
             logger.warning(f"Description too long: {len(description)} characters")
             raise HTTPException(
                 status_code=400,
                 detail=f"Description too long (max 500 characters, got {len(description)})"
             )
 
+        # Check for control characters (except newlines and tabs)
+        import re
+        if re.search(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', description):
+            logger.warning("Description contains invalid control characters")
+            raise HTTPException(
+                status_code=400,
+                detail="Description contains invalid control characters"
+            )
+
         logger.debug("Description validation passed")
+
+    @staticmethod
+    def validate_subnet_mask(segment: str) -> None:
+        """Validate subnet mask is within reasonable range"""
+        import ipaddress
+
+        try:
+            network = ipaddress.ip_network(segment, strict=False)
+            prefix_len = network.prefixlen
+
+            # Typical datacenter subnets: /16 to /29
+            # /30 and /31 are too small for practical use (only 2-4 IPs)
+            # /32 is a host, not a network
+            # /8 to /15 are too large for typical allocations
+            if prefix_len < 16 or prefix_len > 29:
+                logger.warning(f"Unusual subnet mask: /{prefix_len}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Subnet mask /{prefix_len} is outside typical range (/16 to /29). "
+                           f"Use /16-/24 for large networks or /25-/29 for smaller subnets."
+                )
+
+            logger.debug(f"Subnet mask validation passed: /{prefix_len}")
+        except ValueError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid network format: {str(e)}"
+            )
+
+    @staticmethod
+    def validate_no_reserved_ips(segment: str) -> None:
+        """Validate that segment doesn't use reserved/special IP ranges"""
+        import ipaddress
+
+        try:
+            network = ipaddress.ip_network(segment, strict=False)
+
+            # Check for reserved ranges
+            # 0.0.0.0/8 - Current network
+            # 10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16 - Private (OK for datacenter)
+            # 127.0.0.0/8 - Loopback
+            # 169.254.0.0/16 - Link-local
+            # 224.0.0.0/4 - Multicast
+            # 240.0.0.0/4 - Reserved
+
+            first_octet = int(str(network.network_address).split('.')[0])
+
+            # Disallow certain ranges
+            if first_octet == 0:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot use 0.0.0.0/8 network (current network identifier)"
+                )
+
+            if first_octet == 127:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot use 127.0.0.0/8 network (loopback addresses)"
+                )
+
+            if first_octet == 169 and str(network.network_address).startswith("169.254"):
+                raise HTTPException(
+                    status_code=400,
+                    detail="Cannot use 169.254.0.0/16 network (link-local addresses)"
+                )
+
+            if first_octet >= 224:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cannot use {first_octet}.0.0.0/8 network (multicast/reserved range)"
+                )
+
+            logger.debug(f"Reserved IP validation passed for {segment}")
+
+        except ipaddress.AddressValueError as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid IP network: {str(e)}"
+            )
+
+    @staticmethod
+    def sanitize_input(input_str: str, max_length: int = 500) -> str:
+        """Sanitize user input to prevent injection attacks"""
+        if not input_str:
+            return input_str
+
+        # Remove null bytes
+        sanitized = input_str.replace('\x00', '')
+
+        # Trim to max length
+        if len(sanitized) > max_length:
+            sanitized = sanitized[:max_length]
+
+        # Remove leading/trailing whitespace
+        sanitized = sanitized.strip()
+
+        return sanitized
+
+    @staticmethod
+    def validate_update_data(update_data: Dict[str, Any]) -> None:
+        """Validate bulk update data to ensure no malicious content"""
+        import re
+
+        # Check for empty updates
+        if not update_data:
+            raise HTTPException(
+                status_code=400,
+                detail="Update data cannot be empty"
+            )
+
+        # Validate individual fields if present
+        if "vlan_id" in update_data:
+            Validators.validate_vlan_id(update_data["vlan_id"])
+
+        if "epg_name" in update_data:
+            Validators.validate_epg_name(update_data["epg_name"])
+
+        if "cluster_name" in update_data and update_data["cluster_name"]:
+            Validators.validate_cluster_name(update_data["cluster_name"])
+
+        if "description" in update_data:
+            Validators.validate_description(update_data["description"])
+
+        if "segment" in update_data:
+            # Basic format validation (full validation requires site context)
+            import ipaddress
+            try:
+                ipaddress.ip_network(update_data["segment"], strict=False)
+            except ValueError:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid segment format: {update_data['segment']}"
+                )
+
+        # Check for suspicious keys that shouldn't be updated directly
+        forbidden_keys = ["_id", "id", "created_at", "__proto__", "constructor"]
+        for key in update_data.keys():
+            if key in forbidden_keys:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Cannot update protected field: {key}"
+                )
+
+            # Check for potential NoSQL injection patterns in keys
+            if "$" in key or "." in key:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid field name: {key}"
+                )
+
+        logger.debug("Update data validation passed")
 

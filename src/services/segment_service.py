@@ -16,7 +16,12 @@ class SegmentService:
         """Common validation for segment data"""
         Validators.validate_site(segment.site)
         Validators.validate_epg_name(segment.epg_name)
+        Validators.validate_vlan_id(segment.vlan_id)
         Validators.validate_segment_format(segment.segment, segment.site)
+        Validators.validate_subnet_mask(segment.segment)
+        Validators.validate_no_reserved_ips(segment.segment)
+        if segment.description:
+            Validators.validate_description(segment.description)
     
     @staticmethod
     def _segment_to_dict(segment: Segment) -> Dict[str, Any]:
