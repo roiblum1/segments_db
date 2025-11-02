@@ -294,14 +294,14 @@ class NetBoxStorage:
                 prefix_data["vrf"] = vrf_obj.id
                 logger.debug(f"Assigned VRF to prefix")
 
-            # Add site if provided
+            # Add site group if provided
             if "site" in document and document["site"]:
-                logger.debug(f"Getting/creating site: {document['site']}")
-                site_obj = await self._get_or_create_site(document["site"])
-                if not site_obj:
-                    raise Exception(f"Failed to get/create site: {document['site']}")
-                prefix_data["site"] = site_obj.id
-                logger.debug(f"Site ID: {site_obj.id}")
+                logger.debug(f"Getting/creating site group: {document['site']}")
+                site_group_obj = await self._get_or_create_site(document["site"])
+                if not site_group_obj:
+                    raise Exception(f"Failed to get/create site group: {document['site']}")
+                prefix_data["site_group"] = site_group_obj.id
+                logger.debug(f"Site Group ID: {site_group_obj.id}")
 
             # Add tenant "Redbull"
             tenant = await self._get_tenant("Redbull")
@@ -569,8 +569,11 @@ class NetBoxStorage:
             if hasattr(vlan_obj, 'name'):
                 epg_name = vlan_obj.name
 
-            # Get site from VLAN
-            if hasattr(vlan_obj, 'site') and vlan_obj.site:
+            # Get site group from VLAN
+            if hasattr(vlan_obj, 'site_group') and vlan_obj.site_group:
+                site_slug = vlan_obj.site_group.slug if hasattr(vlan_obj.site_group, 'slug') else None
+            elif hasattr(vlan_obj, 'site') and vlan_obj.site:
+                # Fallback to regular site for backward compatibility
                 site_slug = vlan_obj.site.slug if hasattr(vlan_obj.site, 'slug') else None
 
         # Extract metadata from STATUS and DESCRIPTION
@@ -627,34 +630,34 @@ class NetBoxStorage:
         return segment
 
     async def _get_or_create_site(self, site_slug: str):
-        """Get or create a site in NetBox"""
+        """Get or create a site group in NetBox (not regular site)"""
         loop = asyncio.get_event_loop()
 
         try:
-            # Try to get existing site
-            site = await loop.run_in_executor(
+            # Try to get existing site group
+            site_group = await loop.run_in_executor(
                 None,
-                lambda: self.nb.dcim.sites.get(slug=site_slug)
+                lambda: self.nb.dcim.site_groups.get(slug=site_slug)
             )
 
-            if site:
-                return site
+            if site_group:
+                logger.debug(f"Found existing site group: {site_slug}")
+                return site_group
 
-            # Create new site
-            logger.info(f"Creating new site in NetBox: {site_slug}")
-            site = await loop.run_in_executor(
+            # Create new site group
+            logger.info(f"Creating new site group in NetBox: {site_slug}")
+            site_group = await loop.run_in_executor(
                 None,
-                lambda: self.nb.dcim.sites.create(
+                lambda: self.nb.dcim.site_groups.create(
                     name=site_slug.upper(),
-                    slug=site_slug,
-                    status="active"
+                    slug=site_slug
                 )
             )
-            logger.info(f"Created site in NetBox: {site_slug}")
-            return site
+            logger.info(f"Created site group in NetBox: {site_slug}")
+            return site_group
 
         except Exception as e:
-            logger.error(f"Error getting/creating site {site_slug}: {e}")
+            logger.error(f"Error getting/creating site group {site_slug}: {e}")
             raise
 
     async def _cleanup_unused_vlan(self, vlan_obj):
@@ -695,7 +698,7 @@ class NetBoxStorage:
         # Build filter
         vlan_filter = {"vid": vlan_id}
         if site_slug:
-            vlan_filter["site"] = site_slug
+            vlan_filter["site_group"] = site_slug
 
         # Try to get existing VLAN
         vlan = await loop.run_in_executor(
@@ -712,8 +715,8 @@ class NetBoxStorage:
             }
 
             if site_slug:
-                site = await self._get_or_create_site(site_slug)
-                vlan_data["site"] = site.id
+                site_group = await self._get_or_create_site(site_slug)
+                vlan_data["site_group"] = site_group.id
 
             # Add tenant "Redbull"
             tenant = await self._get_tenant("Redbull")
