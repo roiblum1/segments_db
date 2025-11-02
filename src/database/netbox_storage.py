@@ -390,6 +390,20 @@ class NetBoxStorage:
                     prefix.prefix = updates["segment"]
                     logger.debug(f"Updated prefix to: {updates['segment']}")
 
+                # Handle VRF update
+                if "vrf" in updates:
+                    vrf_obj = await self._get_vrf(updates["vrf"])
+                    if vrf_obj:
+                        prefix.vrf = vrf_obj.id
+                        logger.debug(f"Updated VRF to: {updates['vrf']}")
+
+                # Handle custom field updates (DHCP)
+                if "dhcp" in updates:
+                    if not hasattr(prefix, 'custom_fields') or prefix.custom_fields is None:
+                        prefix.custom_fields = {}
+                    prefix.custom_fields['dhcp'] = updates["dhcp"]
+                    logger.debug(f"Updated DHCP custom field to: {updates['dhcp']}")
+
                 # Handle VLAN ID or EPG name updates
                 if "vlan_id" in updates or "epg_name" in updates:
                     # Store old VLAN for cleanup
@@ -415,26 +429,30 @@ class NetBoxStorage:
                     vlan_id = updates.get("vlan_id", segment.get("vlan_id"))
                     epg_name = updates.get("epg_name", segment.get("epg_name"))
                     site = updates.get("site", segment.get("site"))
+                    vrf = updates.get("vrf", segment.get("vrf"))
 
                     if vlan_id and epg_name:
-                        new_vlan_obj = await self._get_or_create_vlan(vlan_id, epg_name, site)
+                        new_vlan_obj = await self._get_or_create_vlan(vlan_id, epg_name, site, vrf)
                         if new_vlan_obj:
                             prefix.vlan = new_vlan_obj.id
                             logger.info(f"Updated prefix to new VLAN {vlan_id} (NetBox ID: {new_vlan_obj.id})")
 
-                # Update prefix status and DESCRIPTION based on allocation state
-                # IMPORTANT: DESCRIPTION is for cluster name, COMMENTS is for user info
+                # Update prefix status and CUSTOM FIELD based on allocation state
+                # IMPORTANT: CUSTOM FIELD "cluster" is for cluster name, COMMENTS is for user info
                 if "cluster_name" in updates and updates["cluster_name"]:
-                    # Allocated: set status to "reserved" and description to cluster name
+                    # Allocated: set status to "reserved" and cluster custom field
                     cluster_name = updates["cluster_name"]
                     prefix.status = "reserved"
-                    prefix.description = f"Cluster: {cluster_name}"
+                    if not hasattr(prefix, 'custom_fields') or prefix.custom_fields is None:
+                        prefix.custom_fields = {}
+                    prefix.custom_fields['cluster'] = cluster_name
                     logger.debug(f"Set allocation: cluster={cluster_name}, status=reserved")
                 elif "released" in updates and updates["released"]:
-                    # Released: set status back to "active" and clear DESCRIPTION (not comments!)
+                    # Released: set status back to "active" and clear cluster custom field
                     prefix.status = "active"
-                    prefix.description = ""  # Empty when available
-                    logger.debug("Cleared allocation: status=active, description=empty")
+                    if hasattr(prefix, 'custom_fields') and prefix.custom_fields:
+                        prefix.custom_fields['cluster'] = None
+                    logger.debug("Cleared allocation: status=active, cluster=empty")
 
                 # Save changes FIRST before cleanup
                 await loop.run_in_executor(None, prefix.save)
@@ -725,12 +743,30 @@ class NetBoxStorage:
             )
             logger.info(f"Created VLAN in NetBox: {vlan_id} ({name}) with tenant=Redbull, role=Data")
         else:
-            # VLAN exists - check if name needs to be updated
+            # VLAN exists - check if name or group needs to be updated
+            needs_update = False
+
             if vlan.name != name:
                 logger.info(f"Updating VLAN name from '{vlan.name}' to '{name}' for VLAN ID {vlan_id}")
                 vlan.name = name
+                needs_update = True
+
+            # Ensure VLAN Group is set if provided and not already set
+            if vrf_name and site_slug:
+                site_group = site_slug.capitalize()
+                expected_group_name = f"{vrf_name}-ClickCluster-{site_group}"
+
+                # Check if VLAN has the correct group
+                if not vlan.group or (hasattr(vlan.group, 'name') and vlan.group.name != expected_group_name):
+                    vlan_group = await self._get_or_create_vlan_group(vrf_name, site_group)
+                    if vlan_group:
+                        vlan.group = vlan_group.id
+                        logger.info(f"Updating VLAN group to '{vlan_group.name}' for VLAN ID {vlan_id}")
+                        needs_update = True
+
+            if needs_update:
                 await loop.run_in_executor(None, vlan.save)
-                logger.info(f"Updated VLAN name to '{name}' for VLAN ID {vlan_id}")
+                logger.info(f"Updated VLAN {vlan_id} successfully")
 
         return vlan
 
