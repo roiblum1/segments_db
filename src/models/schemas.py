@@ -7,7 +7,9 @@ class Segment(BaseModel):
     vlan_id: int = Field(ge=1, le=4094)
     epg_name: str
     segment: str  # e.g., "192.168.1.0/24"
-    description: Optional[str] = ""
+    vrf: str  # VRF name (e.g., "Network1", "Network2", "Network3")
+    dhcp: bool = False  # DHCP enabled/disabled
+    description: Optional[str] = ""  # Kept for backward compatibility
     cluster_name: Optional[str] = None  # None means available
     allocated_at: Optional[datetime] = None
     released: bool = False

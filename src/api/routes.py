@@ -70,11 +70,16 @@ async def create_segments_bulk(segments: List[Segment]):
     """Create multiple segments at once"""
     return await SegmentService.create_segments_bulk(segments)
 
-# Statistics and Configuration Routes  
+# Statistics and Configuration Routes
 @router.get("/sites")
 async def get_sites():
     """Get configured sites"""
     return await StatsService.get_sites()
+
+@router.get("/vrfs")
+async def get_vrfs():
+    """Get list of available VRFs from NetBox"""
+    return await SegmentService.get_vrfs()
 
 @router.get("/stats")
 async def get_stats():

@@ -58,6 +58,8 @@ class SegmentService:
             "vlan_id": segment.vlan_id,
             "epg_name": segment.epg_name,
             "segment": segment.segment,
+            "vrf": segment.vrf,
+            "dhcp": segment.dhcp,
             "description": segment.description
         }
     
@@ -320,7 +322,19 @@ class SegmentService:
                 "created": created,
                 "errors": errors if errors else None
             }
-            
+
         except Exception as e:
             logger.error(f"Error in bulk creation: {e}")
+            raise HTTPException(status_code=500, detail=str(e))
+
+    @staticmethod
+    async def get_vrfs() -> Dict[str, Any]:
+        """Get list of available VRFs from NetBox"""
+        logger.info("Fetching VRFs from NetBox")
+        try:
+            vrfs = await DatabaseUtils.get_vrfs()
+            logger.info(f"Retrieved {len(vrfs)} VRFs")
+            return {"vrfs": vrfs}
+        except Exception as e:
+            logger.error(f"Error retrieving VRFs: {e}")
             raise HTTPException(status_code=500, detail=str(e))

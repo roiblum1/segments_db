@@ -167,27 +167,51 @@ async function loadSites() {
         const data = await fetchAPI('/sites');
         console.log('Sites data received:', data);
         const sites = data.sites;
-        
+
         const segmentSiteSelect = document.getElementById('segmentSite');
         const allocationSiteSelect = document.getElementById('allocationSite');
         const siteFilterSelect = document.getElementById('siteFilter');
-        
+
         console.log('Found site selectors:', segmentSiteSelect, allocationSiteSelect, siteFilterSelect);
-        
+
         segmentSiteSelect.innerHTML = '<option value="">Select site...</option>';
         allocationSiteSelect.innerHTML = '<option value="">Select site...</option>';
         siteFilterSelect.innerHTML = '<option value="">All Sites</option>';
-        
+
         sites.forEach(site => {
             segmentSiteSelect.innerHTML += `<option value="${site}">${site}</option>`;
             allocationSiteSelect.innerHTML += `<option value="${site}">${site}</option>`;
             siteFilterSelect.innerHTML += `<option value="${site}">${site}</option>`;
         });
-        
+
         console.log('Sites loaded successfully:', sites);
     } catch (error) {
         console.error('Failed to load sites:', error);
         showError('Failed to load sites: ' + error.message);
+    }
+}
+
+async function loadVrfs() {
+    try {
+        console.log('Loading VRFs...');
+        const data = await fetchAPI('/vrfs');
+        console.log('VRFs data received:', data);
+        const vrfs = data.vrfs;
+
+        const segmentVrfSelect = document.getElementById('segmentVrf');
+
+        console.log('Found VRF selector:', segmentVrfSelect);
+
+        segmentVrfSelect.innerHTML = '<option value="">Select VRF...</option>';
+
+        vrfs.forEach(vrf => {
+            segmentVrfSelect.innerHTML += `<option value="${vrf}">${vrf}</option>`;
+        });
+
+        console.log('VRFs loaded successfully:', vrfs);
+    } catch (error) {
+        console.error('Failed to load VRFs:', error);
+        showError('Failed to load VRFs: ' + error.message);
     }
 }
 
@@ -259,42 +283,43 @@ async function loadSegments() {
         
         const segments = await fetchAPI(endpoint);
         const container = document.getElementById('segmentsList');
-        
+
         if (segments.length === 0) {
-            container.innerHTML = '<tr><td colspan="8" class="empty-state">No segments found</td></tr>';
+            container.innerHTML = '<tr><td colspan="9" class="empty-state">No segments found</td></tr>';
             return;
         }
-        
+
         container.innerHTML = segments.map(segment => {
             const isAllocated = segment.cluster_name && !segment.released;
             return `
                 <tr>
                     <td>${segment.site}</td>
+                    <td>${segment.vrf || '-'}</td>
                     <td><strong>${segment.vlan_id}</strong></td>
                     <td><code>${segment.epg_name}</code></td>
                     <td><code>${segment.segment}</code></td>
+                    <td>${segment.dhcp ? 'Yes' : 'No'}</td>
                     <td>${segment.cluster_name || '-'}</td>
                     <td>
                         <span class="badge ${isAllocated ? 'allocated' : 'available'}">
                             ${isAllocated ? 'Allocated' : 'Available'}
                         </span>
                     </td>
-                    <td>${segment.description || '-'}</td>
                     <td>
-                        <button class="edit" 
+                        <button class="edit"
                                 onclick="editSegment('${segment._id}')"
                                 data-segment-id="${segment._id}">
                             Edit
                         </button>
                         ${isAllocated ? `
-                            <button class="release" 
+                            <button class="release"
                                     onclick="releaseSegment('${segment.cluster_name}', '${segment.site}')"
                                     data-cluster="${segment.cluster_name}"
                                     data-site="${segment.site}">
                                 Release
                             </button>
                         ` : `
-                            <button class="delete" 
+                            <button class="delete"
                                     onclick="deleteSegment('${segment._id}')"
                                     data-segment-id="${segment._id}">
                                 Delete
@@ -306,8 +331,8 @@ async function loadSegments() {
         }).join('');
     } catch (error) {
         console.error('Failed to load segments:', error);
-        document.getElementById('segmentsList').innerHTML = 
-            '<tr><td colspan="8" class="empty-state">Failed to load segments</td></tr>';
+        document.getElementById('segmentsList').innerHTML =
+            '<tr><td colspan="9" class="empty-state">Failed to load segments</td></tr>';
     }
 }
 
@@ -364,36 +389,42 @@ async function importBulk() {
 
     for (const line of lines) {
         const parts = line.split(',').map(p => p.trim());
-        if (parts.length >= 4) {
+        if (parts.length >= 6) {
             const vlan = parseInt(parts[1], 10);
             if (!Number.isFinite(vlan)) continue; // skip bad rows
+
+            // Parse dhcp as boolean
+            const dhcp = parts[5].toLowerCase() === 'true';
+
             segments.push({
                 site: parts[0],
                 vlan_id: vlan,
                 epg_name: parts[2],
                 segment: parts[3],
-                description: parts[4] || ''
+                vrf: parts[4],
+                dhcp: dhcp,
+                description: parts[6] || ''
             });
         }
-    }   
-    
+    }
+
     if (segments.length === 0) {
         showError('No valid segments found in CSV data');
         return;
     }
-    
+
     try {
         const result = await fetchAPI('/segments/bulk', {
             method: 'POST',
             body: JSON.stringify(segments)
         });
-        
+
         if (result.errors && result.errors.length > 0) {
             showError(`Created ${result.created} segments. Errors: ${result.errors.join(', ')}`);
         } else {
             showSuccess(`Successfully imported ${result.created} segments`);
         }
-        
+
         textarea.value = '';
         await Promise.all([loadSegments(), loadStats()]);
     } catch (error) {
@@ -405,24 +436,26 @@ async function importBulk() {
 document.addEventListener('DOMContentLoaded', function() {
     document.getElementById('addSegmentForm').addEventListener('submit', async (e) => {
         e.preventDefault();
-        
+
         const button = document.getElementById('addSegmentBtn');
         button.disabled = true;
-        
+
         const segment = {
             site: document.getElementById('segmentSite').value,
             vlan_id: parseInt(document.getElementById('vlanId').value),
             epg_name: document.getElementById('epgName').value,
             segment: document.getElementById('networkSegment').value,
+            vrf: document.getElementById('segmentVrf').value,
+            dhcp: document.getElementById('segmentDhcp').checked,
             description: document.getElementById('segmentDescription').value
         };
-        
+
         try {
             await fetchAPI('/segments', {
                 method: 'POST',
                 body: JSON.stringify(segment)
             });
-            
+
             showSuccess('Segment created successfully');
             e.target.reset();
             await Promise.all([loadSegments(), loadStats()]);
@@ -534,8 +567,11 @@ document.addEventListener('DOMContentLoaded', function() {
     async function init() {
         try {
             console.log('Initializing application...');
-            await loadSites();
-            console.log('Sites loaded, loading stats and segments...');
+            await Promise.all([
+                loadSites(),
+                loadVrfs()
+            ]);
+            console.log('Sites and VRFs loaded, loading stats and segments...');
             await Promise.all([
                 loadStats(),
                 loadSegments()
@@ -546,7 +582,7 @@ document.addEventListener('DOMContentLoaded', function() {
             showError('Failed to load initial data. Please refresh the page.');
         }
     }
-    
+
     // Start the app
     init();
     
@@ -615,7 +651,19 @@ function showEditModal(segment) {
                         <input type="text" id="editNetworkSegment" value="${segment.segment}" required>
                     </div>
                     <div class="form-group">
-                        <label for="editDescription">Description</label>
+                        <label for="editVrf">VRF / Network</label>
+                        <select id="editVrf" required>
+                            <option value="">Select VRF...</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="editDhcp" ${segment.dhcp ? 'checked' : ''}>
+                            <span>DHCP Enabled</span>
+                        </label>
+                    </div>
+                    <div class="form-group">
+                        <label for="editDescription">Description (Optional)</label>
                         <input type="text" id="editDescription" value="${segment.description || ''}" placeholder="Optional description">
                     </div>
                     <div class="form-group">
@@ -631,19 +679,20 @@ function showEditModal(segment) {
             </div>
         </div>
     `;
-    
+
     // Add modal to DOM
     document.body.insertAdjacentHTML('beforeend', modalHTML);
-    
-    // Load sites into dropdown and set current site
+
+    // Load sites and VRFs into dropdowns and set current values
     loadSitesForEdit(segment.site);
-    
+    loadVrfsForEdit(segment.vrf);
+
     // Add form submit handler
     document.getElementById('editSegmentForm').addEventListener('submit', (e) => {
         e.preventDefault();
         updateSegment(segment._id);
     });
-    
+
     // Show modal
     document.getElementById('editModal').style.display = 'block';
 }
@@ -652,7 +701,7 @@ async function loadSitesForEdit(selectedSite) {
     try {
         const data = await fetchAPI('/sites');
         const select = document.getElementById('editSite');
-        
+
         select.innerHTML = '<option value="">Select site...</option>';
         data.sites.forEach(site => {
             const option = document.createElement('option');
@@ -668,39 +717,61 @@ async function loadSitesForEdit(selectedSite) {
     }
 }
 
+async function loadVrfsForEdit(selectedVrf) {
+    try {
+        const data = await fetchAPI('/vrfs');
+        const select = document.getElementById('editVrf');
+
+        select.innerHTML = '<option value="">Select VRF...</option>';
+        data.vrfs.forEach(vrf => {
+            const option = document.createElement('option');
+            option.value = vrf;
+            option.textContent = vrf;
+            if (vrf === selectedVrf) {
+                option.selected = true;
+            }
+            select.appendChild(option);
+        });
+    } catch (error) {
+        console.error('Failed to load VRFs for edit:', error);
+    }
+}
+
 async function updateSegment(segmentId) {
     const form = document.getElementById('editSegmentForm');
     const formData = new FormData(form);
-    
+
     const segmentData = {
         site: document.getElementById('editSite').value,
         vlan_id: parseInt(document.getElementById('editVlanId').value),
         epg_name: document.getElementById('editEpgName').value.trim(),
         segment: document.getElementById('editNetworkSegment').value.trim(),
+        vrf: document.getElementById('editVrf').value,
+        dhcp: document.getElementById('editDhcp').checked,
         description: document.getElementById('editDescription').value.trim()
     };
-    
+
     // Handle cluster name updates for all segments
     const clusterField = document.getElementById('editClusterName');
     const clusterName = clusterField.value.trim();
-    
+
     try {
         const updateBtn = form.querySelector('button[type="submit"]');
         updateBtn.disabled = true;
         updateBtn.textContent = 'Updating...';
-        
+
         // Always handle cluster name updates (this is the primary operation)
         await fetchAPI(`/segments/${segmentId}/clusters`, {
             method: 'PUT',
             body: JSON.stringify({ cluster_names: clusterName })
         });
-        
+
         // Update basic segment data (this is the primary operation for most edits)
         await fetchAPI(`/segments/${segmentId}`, {
             method: 'PUT',
             body: JSON.stringify(segmentData)
         });
-        
+
         closeEditModal();
         showSuccess('Segment updated successfully');
         await Promise.all([loadSegments(), loadStats()]);

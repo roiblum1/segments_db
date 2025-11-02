@@ -274,15 +274,25 @@ class NetBoxStorage:
         try:
             logger.debug(f"Creating NetBox prefix for document: {document}")
 
+            # Validate and get VRF (must exist)
+            vrf_obj = None
+            if "vrf" in document and document["vrf"]:
+                vrf_obj = await self._get_vrf(document["vrf"])
+                logger.debug(f"VRF validated: {document['vrf']}")
+
             # Prepare prefix data
-            # DESCRIPTION will be used for cluster name when allocated
-            # COMMENTS will store the user's info (DHCP, Gateway, etc.)
             prefix_data = {
                 "prefix": document["segment"],
                 "description": "",  # Empty initially, will show cluster name when allocated
                 "comments": document.get("description", ""),  # User info goes in comments
                 "status": "active",
+                "is_pool": True,  # All IP addresses within this prefix are considered usable
             }
+
+            # Add VRF if provided
+            if vrf_obj:
+                prefix_data["vrf"] = vrf_obj.id
+                logger.debug(f"Assigned VRF to prefix")
 
             # Add site if provided
             if "site" in document and document["site"]:
@@ -293,21 +303,42 @@ class NetBoxStorage:
                 prefix_data["site"] = site_obj.id
                 logger.debug(f"Site ID: {site_obj.id}")
 
-            # Add VLAN if provided
+            # Add tenant "Redbull"
+            tenant = await self._get_tenant("Redbull")
+            if tenant:
+                prefix_data["tenant"] = tenant.id
+                logger.debug(f"Assigned tenant 'Redbull' to prefix")
+
+            # Add role "Data"
+            role = await self._get_role("Data", "prefix")
+            if role:
+                prefix_data["role"] = role.id
+                logger.debug(f"Assigned role 'Data' to prefix")
+
+            # Add VLAN if provided (pass VRF name for VLAN group)
             if "vlan_id" in document and document["vlan_id"]:
                 logger.debug(f"Getting/creating VLAN: {document['vlan_id']}")
                 vlan_obj = await self._get_or_create_vlan(
                     document["vlan_id"],
                     document.get("epg_name", f"VLAN_{document['vlan_id']}"),
-                    document.get("site")
+                    document.get("site"),
+                    document.get("vrf")  # Pass VRF name for VLAN group creation
                 )
                 if not vlan_obj:
                     raise Exception(f"Failed to get/create VLAN: {document['vlan_id']}")
                 prefix_data["vlan"] = vlan_obj.id
                 logger.debug(f"VLAN ID: {vlan_obj.id}")
 
-            # Note: Comments already populated with user info from description field above
-            # Description will show cluster name when allocated
+            # Add custom fields
+            custom_fields = {}
+            if "dhcp" in document:
+                custom_fields["dhcp"] = document["dhcp"]
+            if "cluster_name" in document and document["cluster_name"]:
+                custom_fields["cluster"] = document["cluster_name"]
+
+            if custom_fields:
+                prefix_data["custom_fields"] = custom_fields
+                logger.debug(f"Added custom fields: {custom_fields}")
 
             # Create prefix in NetBox
             logger.debug(f"Creating prefix with data: {prefix_data}")
@@ -317,7 +348,7 @@ class NetBoxStorage:
             )
 
             logger.info(f"Created prefix in NetBox: {prefix.prefix} (ID: {prefix.id})")
-            logger.debug(f"Created prefix site: {getattr(prefix, 'site', 'NO-SITE')}")
+            logger.debug(f"Created prefix with VRF={document.get('vrf')}, DHCP={document.get('dhcp')}, is_pool=True")
 
             # Invalidate cache since we modified data
             invalidate_cache("prefixes")
@@ -532,10 +563,24 @@ class NetBoxStorage:
         # Determine if allocated or released based on STATUS
         released = (status_val == 'active')
 
-        # Extract cluster name from description if allocated
+        # Extract cluster name from custom field or description (for backward compatibility)
         cluster_name = None
-        if status_val == 'reserved' and netbox_description.startswith('Cluster: '):
+        custom_fields = getattr(prefix, 'custom_fields', {}) or {}
+
+        if 'cluster' in custom_fields and custom_fields['cluster']:
+            cluster_name = custom_fields['cluster']
+        elif status_val == 'reserved' and netbox_description.startswith('Cluster: '):
             cluster_name = netbox_description.replace('Cluster: ', '').strip()
+
+        # Extract VRF
+        vrf_name = None
+        if hasattr(prefix, 'vrf') and prefix.vrf:
+            vrf_name = prefix.vrf.name if hasattr(prefix.vrf, 'name') else str(prefix.vrf)
+
+        # Extract DHCP from custom field
+        dhcp = False
+        if 'dhcp' in custom_fields:
+            dhcp = bool(custom_fields['dhcp'])
 
         # For timestamps, we'll use current time as approximation
         # (NetBox doesn't store these, so we set them when we update)
@@ -552,6 +597,8 @@ class NetBoxStorage:
             "vlan_id": vlan_id,
             "epg_name": epg_name,
             "segment": str(prefix.prefix),
+            "vrf": vrf_name,
+            "dhcp": dhcp,
             "description": user_comments,  # Return user comments as description for API
             "cluster_name": cluster_name,
             "allocated_at": allocated_at,
@@ -623,8 +670,8 @@ class NetBoxStorage:
             logger.warning(f"Error cleaning up VLAN {vlan_obj.vid}: {e}")
             # Don't fail the update if cleanup fails
 
-    async def _get_or_create_vlan(self, vlan_id: int, name: str, site_slug: Optional[str] = None):
-        """Get or create a VLAN in NetBox"""
+    async def _get_or_create_vlan(self, vlan_id: int, name: str, site_slug: Optional[str] = None, vrf_name: Optional[str] = None):
+        """Get or create a VLAN in NetBox with tenant, role, and group"""
         loop = asyncio.get_event_loop()
 
         # Build filter
@@ -650,12 +697,33 @@ class NetBoxStorage:
                 site = await self._get_or_create_site(site_slug)
                 vlan_data["site"] = site.id
 
+            # Add tenant "Redbull"
+            tenant = await self._get_tenant("Redbull")
+            if tenant:
+                vlan_data["tenant"] = tenant.id
+                logger.debug(f"Assigned tenant 'Redbull' to VLAN")
+
+            # Add role "Data"
+            role = await self._get_role("Data", "vlan")
+            if role:
+                vlan_data["role"] = role.id
+                logger.debug(f"Assigned role 'Data' to VLAN")
+
+            # Add VLAN Group if VRF provided
+            if vrf_name and site_slug:
+                # Extract site number (e.g., "site1" -> "Site1")
+                site_group = site_slug.capitalize()
+                vlan_group = await self._get_or_create_vlan_group(vrf_name, site_group)
+                if vlan_group:
+                    vlan_data["group"] = vlan_group.id
+                    logger.debug(f"Assigned VLAN group '{vlan_group.name}' to VLAN")
+
             # Create new VLAN
             vlan = await loop.run_in_executor(
                 None,
                 lambda: self.nb.ipam.vlans.create(**vlan_data)
             )
-            logger.info(f"Created VLAN in NetBox: {vlan_id} ({name})")
+            logger.info(f"Created VLAN in NetBox: {vlan_id} ({name}) with tenant=Redbull, role=Data")
         else:
             # VLAN exists - check if name needs to be updated
             if vlan.name != name:
@@ -665,6 +733,132 @@ class NetBoxStorage:
                 logger.info(f"Updated VLAN name to '{name}' for VLAN ID {vlan_id}")
 
         return vlan
+
+    async def _get_vrf(self, vrf_name: str):
+        """Get VRF from NetBox (do not create - must exist)"""
+        loop = asyncio.get_event_loop()
+
+        try:
+            vrf = await loop.run_in_executor(
+                None,
+                lambda: self.nb.ipam.vrfs.get(name=vrf_name)
+            )
+
+            if not vrf:
+                from fastapi import HTTPException
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"VRF '{vrf_name}' does not exist in NetBox. Please create it first or select an existing VRF."
+                )
+
+            logger.debug(f"Found VRF in NetBox: {vrf_name} (ID: {vrf.id})")
+            return vrf
+
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error fetching VRF '{vrf_name}' from NetBox: {e}")
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error fetching VRF from NetBox: {str(e)}"
+            )
+
+    async def _get_tenant(self, tenant_name: str):
+        """Get tenant from NetBox (must exist)"""
+        loop = asyncio.get_event_loop()
+
+        try:
+            tenant = await loop.run_in_executor(
+                None,
+                lambda: self.nb.tenancy.tenants.get(name=tenant_name)
+            )
+
+            if not tenant:
+                logger.warning(f"Tenant '{tenant_name}' not found in NetBox")
+                return None
+
+            logger.debug(f"Found tenant in NetBox: {tenant_name} (ID: {tenant.id})")
+            return tenant
+
+        except Exception as e:
+            logger.error(f"Error fetching tenant '{tenant_name}' from NetBox: {e}")
+            return None
+
+    async def _get_role(self, role_name: str, model_type: str = "vlan"):
+        """Get role from NetBox (must exist)
+
+        Args:
+            role_name: Name of the role (e.g., "Data")
+            model_type: Type of model ("vlan" or "prefix")
+        """
+        loop = asyncio.get_event_loop()
+
+        try:
+            # Roles are in ipam.roles for both VLANs and Prefixes
+            role = await loop.run_in_executor(
+                None,
+                lambda: self.nb.ipam.roles.get(name=role_name)
+            )
+
+            if not role:
+                logger.warning(f"Role '{role_name}' not found in NetBox")
+                return None
+
+            logger.debug(f"Found role in NetBox: {role_name} (ID: {role.id})")
+            return role
+
+        except Exception as e:
+            logger.error(f"Error fetching role '{role_name}' from NetBox: {e}")
+            return None
+
+    async def _get_or_create_vlan_group(self, vrf_name: str, site_group: str):
+        """Get or create VLAN Group: Network{X}-ClickCluster-Site{Y}"""
+        loop = asyncio.get_event_loop()
+
+        # Format: "Network1-ClickCluster-Site1"
+        group_name = f"{vrf_name}-ClickCluster-{site_group}"
+
+        try:
+            vlan_group = await loop.run_in_executor(
+                None,
+                lambda: self.nb.ipam.vlan_groups.get(name=group_name)
+            )
+
+            if not vlan_group:
+                # Create new VLAN Group
+                vlan_group_data = {
+                    "name": group_name,
+                    "slug": group_name.lower().replace("_", "-"),
+                }
+
+                vlan_group = await loop.run_in_executor(
+                    None,
+                    lambda: self.nb.ipam.vlan_groups.create(**vlan_group_data)
+                )
+                logger.info(f"Created VLAN Group in NetBox: {group_name}")
+
+            return vlan_group
+
+        except Exception as e:
+            logger.error(f"Error getting/creating VLAN group '{group_name}': {e}")
+            return None
+
+    async def get_vrfs(self) -> List[str]:
+        """Get list of available VRFs from NetBox"""
+        loop = asyncio.get_event_loop()
+
+        try:
+            vrfs = await loop.run_in_executor(
+                None,
+                lambda: list(self.nb.ipam.vrfs.all())
+            )
+            vrf_names = [vrf.name for vrf in vrfs]
+            logger.info(f"Retrieved {len(vrf_names)} VRFs from NetBox: {vrf_names}")
+            return vrf_names
+        except Exception as e:
+            logger.error(f"Error fetching VRFs from NetBox: {e}")
+            raise
 
 
 def get_storage() -> NetBoxStorage:

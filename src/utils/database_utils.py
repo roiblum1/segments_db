@@ -328,3 +328,8 @@ class DatabaseUtils:
 
         # IDs are already strings in JSON storage
         return segments
+    @staticmethod
+    async def get_vrfs() -> List[str]:
+        """Get list of available VRFs from NetBox"""
+        storage = get_storage()
+        return await storage.get_vrfs()
