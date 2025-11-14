@@ -1,0 +1,81 @@
+version: '3.8'
+
+services:
+  # MySQL Database
+  mysql:
+    image: mysql:8.0
+    container_name: vlan_manager_mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root_password}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-vlan_manager}
+      MYSQL_USER: ${MYSQL_USER:-vlan_manager}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-vlan_manager_password}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./src/database/mysql_schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${MYSQL_ROOT_PASSWORD:-root_password}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - vlan_manager_network
+
+  # VLAN Manager Application
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        VERSION: ${APP_VERSION:-dev}
+        BUILD_DATE: ${BUILD_DATE:-unknown}
+        COMMIT_SHA: ${COMMIT_SHA:-unknown}
+    container_name: vlan_manager_app
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      # Storage backend
+      STORAGE_BACKEND: ${STORAGE_BACKEND:-mysql}
+
+      # MySQL configuration
+      MYSQL_HOST: mysql
+      MYSQL_PORT: 3306
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-vlan_manager}
+      MYSQL_USER: ${MYSQL_USER:-vlan_manager}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-vlan_manager_password}
+      MYSQL_POOL_SIZE: ${MYSQL_POOL_SIZE:-20}
+
+      # Application configuration
+      LOG_LEVEL: ${LOG_LEVEL:-INFO}
+      SITES: ${SITES:-Site1,Site2,Site3}
+      SITE_PREFIXES: ${SITE_PREFIXES:-Site1:192,Site2:193,Site3:194}
+      HOST: 0.0.0.0
+      PORT: 9000
+      ENVIRONMENT: ${ENVIRONMENT:-production}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000,http://localhost:9000}
+    ports:
+      - "${APP_PORT:-9000}:9000"
+    volumes:
+      - ./logs:/app/logs
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    networks:
+      - vlan_manager_network
+
+volumes:
+  mysql_data:
+    driver: local
+
+networks:
+  vlan_manager_network:
+    driver: bridge

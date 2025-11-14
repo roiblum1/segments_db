@@ -2,7 +2,18 @@ import os
 import logging
 import sys
 
-# NetBox Configuration
+# Storage Backend Selection
+STORAGE_BACKEND = os.getenv("STORAGE_BACKEND", "mysql").lower()  # "mysql" or "netbox"
+
+# MySQL Configuration (Primary Storage)
+MYSQL_HOST = os.getenv("MYSQL_HOST", "localhost")
+MYSQL_PORT = int(os.getenv("MYSQL_PORT", "3306"))
+MYSQL_USER = os.getenv("MYSQL_USER", "vlan_manager")
+MYSQL_PASSWORD = os.getenv("MYSQL_PASSWORD", "vlan_manager_password")
+MYSQL_DATABASE = os.getenv("MYSQL_DATABASE", "vlan_manager")
+MYSQL_POOL_SIZE = int(os.getenv("MYSQL_POOL_SIZE", "20"))
+
+# NetBox Configuration (Legacy - kept for reference)
 NETBOX_URL = os.getenv("NETBOX_URL", "https://srcc3192.cloud.netboxapp.com")
 NETBOX_TOKEN = os.getenv("NETBOX_TOKEN", "892ee583fa47f1682ef258f8df00fbeea11f6ebc")
 NETBOX_SSL_VERIFY = os.getenv("NETBOX_SSL_VERIFY", "true").lower() in ("true", "1", "yes")

@@ -2,11 +2,20 @@ import logging
 import time
 from typing import Optional, List, Dict, Any
 
-from ..config.settings import SITES
-from ..database.netbox_storage import get_storage
+from ..config.settings import SITES, STORAGE_BACKEND
 from .time_utils import get_current_utc
 
 logger = logging.getLogger(__name__)
+
+# Dynamic storage import based on configuration
+def get_storage():
+    """Get storage backend based on configuration"""
+    if STORAGE_BACKEND == "mysql":
+        from ..database.mysql_storage import get_storage as get_mysql_storage
+        return get_mysql_storage()
+    else:
+        from ..database.netbox_storage import get_storage as get_netbox_storage
+        return get_netbox_storage()
 
 class DatabaseUtils:
     """Utility class for database operations"""

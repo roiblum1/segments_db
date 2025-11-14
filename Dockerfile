@@ -19,12 +19,14 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 WORKDIR /app
 
 # Install minimal system dependencies
+# Added: default-mysql-client for MySQL connectivity testing
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
+    default-mysql-client \
     && rm -rf /var/lib/apt/lists/*
 
-# Create data directory for JSON storage
-RUN mkdir -p /app/data && chmod 777 /app/data
+# Create log directory
+RUN mkdir -p /app/logs && chmod 777 /app/logs
 
 # Copy requirements first for better caching
 COPY requirements.txt .
@@ -50,14 +52,14 @@ LABEL org.opencontainers.image.title="VLAN Manager" \
       org.opencontainers.image.documentation="https://github.com/Roi12345/vlan-manager"
 
 # Expose port
-EXPOSE 8000
+EXPOSE 9000
 
-# Volume for persistent data
-VOLUME ["/app/data"]
+# Volume for logs
+VOLUME ["/app/logs"]
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
-    CMD curl -f http://localhost:8000/api/health || exit 1
+    CMD curl -f http://localhost:9000/api/health || exit 1
 
 # Run the application
 CMD ["python", "main.py"]
