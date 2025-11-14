@@ -18,6 +18,7 @@ class Segment(BaseModel):
 class VLANAllocationRequest(BaseModel):
     cluster_name: str
     site: str
+    vrf: str  # Required: VRF/Network to allocate from
 
 class VLANAllocationResponse(BaseModel):
     vlan_id: int
@@ -25,6 +26,7 @@ class VLANAllocationResponse(BaseModel):
     site: str
     segment: str
     epg_name: str
+    vrf: str  # Include VRF in response
     allocated_at: datetime
 
 class VLANRelease(BaseModel):

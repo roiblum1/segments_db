@@ -1,5 +1,5 @@
 from typing import Optional, List
-from fastapi import APIRouter
+from fastapi import APIRouter, BackgroundTasks
 
 from ..models.schemas import (
     VLANAllocationRequest, VLANAllocationResponse, 
@@ -50,9 +50,9 @@ async def get_segment(segment_id: str):
     return await SegmentService.get_segment_by_id(segment_id)
 
 @router.put("/segments/{segment_id}")
-async def update_segment(segment_id: str, segment: Segment):
+async def update_segment(segment_id: str, segment: Segment, background_tasks: BackgroundTasks):
     """Update a segment"""
-    return await SegmentService.update_segment(segment_id, segment)
+    return await SegmentService.update_segment(segment_id, segment, background_tasks)
 
 @router.put("/segments/{segment_id}/clusters")
 async def update_segment_clusters(segment_id: str, request: dict):

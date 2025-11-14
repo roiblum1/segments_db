@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import Dict, Any
 from fastapi import HTTPException
 
@@ -62,7 +63,6 @@ class Validators:
             )
 
         # Check for invalid characters (NetBox VLAN names have restrictions)
-        import re
         if not re.match(r'^[a-zA-Z0-9_\-]+$', epg_name):
             logger.warning(f"EPG name contains invalid characters: '{epg_name}'")
             raise HTTPException(
@@ -160,7 +160,6 @@ class Validators:
             )
 
         # Allow letters, numbers, hyphens, underscores, dots (for FQDNs)
-        import re
         if not re.match(r'^[a-zA-Z0-9_\-\.]+$', cluster_name):
             logger.warning(f"Cluster name contains invalid characters: '{cluster_name}'")
             raise HTTPException(
@@ -187,7 +186,6 @@ class Validators:
             )
 
         # Check for control characters (except newlines and tabs)
-        import re
         if re.search(r'[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]', description):
             logger.warning("Description contains invalid control characters")
             raise HTTPException(
@@ -297,8 +295,6 @@ class Validators:
     @staticmethod
     def validate_update_data(update_data: Dict[str, Any]) -> None:
         """Validate bulk update data to ensure no malicious content"""
-        import re
-
         # Check for empty updates
         if not update_data:
             raise HTTPException(
@@ -544,9 +540,7 @@ class Validators:
             r'expression\(',
         ]
 
-        import re
         text_lower = text.lower()
-
         for pattern in dangerous_patterns:
             if re.search(pattern, text_lower):
                 logger.warning(f"Potential script injection detected in {field_name}: {pattern}")
@@ -666,5 +660,49 @@ class Validators:
             raise HTTPException(
                 status_code=409,
                 detail="Record was modified by another request. Please refresh and try again."
+            )
+
+    @staticmethod
+    async def validate_vrf(vrf: str) -> None:
+        """Validate if VRF exists in NetBox
+
+        Args:
+            vrf: VRF name to validate
+
+        Raises:
+            HTTPException 400: If VRF is invalid or doesn't exist
+        """
+        from ..database.netbox_storage import NetBoxStorage
+
+        logger.info(f"Validating VRF: {vrf}")
+
+        if not vrf or not vrf.strip():
+            logger.warning("VRF name is empty")
+            raise HTTPException(
+                status_code=400,
+                detail="VRF name cannot be empty"
+            )
+
+        # Get available VRFs from NetBox
+        storage = NetBoxStorage()
+        try:
+            # Get VRFs from storage
+            available_vrfs = await storage.get_vrfs()
+
+            if vrf not in available_vrfs:
+                logger.warning(f"Invalid VRF requested: {vrf}, available VRFs: {available_vrfs}")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Invalid VRF. Must be one of: {', '.join(available_vrfs)}"
+                )
+
+            logger.info(f"VRF validation passed: {vrf}")
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error(f"Error validating VRF: {e}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error validating VRF: {str(e)}"
             )
 

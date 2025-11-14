@@ -199,13 +199,20 @@ async function loadVrfs() {
         const vrfs = data.vrfs;
 
         const segmentVrfSelect = document.getElementById('segmentVrf');
+        const allocationVrfSelect = document.getElementById('allocationVrf');
 
-        console.log('Found VRF selector:', segmentVrfSelect);
+        console.log('Found VRF selectors:', segmentVrfSelect, allocationVrfSelect);
 
+        // Populate segment form VRF dropdown (required)
         segmentVrfSelect.innerHTML = '<option value="">Select VRF...</option>';
-
         vrfs.forEach(vrf => {
             segmentVrfSelect.innerHTML += `<option value="${vrf}">${vrf}</option>`;
+        });
+
+        // Populate allocation form VRF dropdown (required)
+        allocationVrfSelect.innerHTML = '<option value="">Select Network...</option>';
+        vrfs.forEach(vrf => {
+            allocationVrfSelect.innerHTML += `<option value="${vrf}">${vrf}</option>`;
         });
 
         console.log('VRFs loaded successfully:', vrfs);
@@ -468,31 +475,33 @@ document.addEventListener('DOMContentLoaded', function() {
     
     document.getElementById('allocateForm').addEventListener('submit', async (e) => {
         e.preventDefault();
-        
+
         const button = document.getElementById('allocateBtn');
         button.disabled = true;
-        
+
         const request = {
             cluster_name: document.getElementById('clusterName').value,
-            site: document.getElementById('allocationSite').value
+            site: document.getElementById('allocationSite').value,
+            vrf: document.getElementById('allocationVrf').value
         };
-        
+
         try {
             const result = await fetchAPI('/allocate-vlan', {
                 method: 'POST',
                 body: JSON.stringify(request)
             });
-            
+
             document.getElementById('allocationResult').innerHTML = `
                 <div style="padding: 15px; background: #48bb78; color: white; border-radius: 5px;">
                     <strong>✓ Success!</strong><br>
                     VLAN ID: <strong>${result.vlan_id}</strong><br>
                     EPG: <strong>${result.epg_name}</strong><br>
                     Network: <strong>${result.segment}</strong><br>
+                    VRF: <strong>${result.vrf || 'N/A'}</strong><br>
                     Cluster: ${result.cluster_name}
                 </div>
             `;
-            
+
             await Promise.all([loadSegments(), loadStats()]);
         } catch (error) {
             document.getElementById('allocationResult').innerHTML = `

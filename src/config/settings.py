@@ -53,21 +53,31 @@ def get_site_prefix(site: str) -> str:
 
 # Logging Configuration
 def setup_logging():
-    """Configure logging for the application"""
+    """Configure logging for the application with rotation"""
+    from logging.handlers import RotatingFileHandler
+
     # Get log level from environment variable, default to INFO
     log_level_str = os.getenv("LOG_LEVEL", "INFO").upper()
     log_level = getattr(logging, log_level_str, logging.INFO)
-    
+
+    # Create rotating file handler: 50MB per file, keep 5 backup files
+    rotating_handler = RotatingFileHandler(
+        'vlan_manager.log',
+        maxBytes=50 * 1024 * 1024,  # 50MB
+        backupCount=5,  # Keep 5 backup files (total ~250MB)
+        encoding='utf-8'
+    )
+
     logging.basicConfig(
         level=log_level,
         format='%(asctime)s - %(name)s - %(levelname)s - [%(filename)s:%(lineno)d] %(funcName)s() - %(message)s',
         handlers=[
             logging.StreamHandler(sys.stdout),
-            logging.FileHandler('vlan_manager.log')
+            rotating_handler
         ]
     )
     return logging.getLogger(__name__)
 
 # Server Configuration
-SERVER_HOST = "0.0.0.0"
-SERVER_PORT = 8000
+SERVER_HOST = os.getenv("SERVER_HOST", "0.0.0.0")
+SERVER_PORT = int(os.getenv("SERVER_PORT", "8000"))

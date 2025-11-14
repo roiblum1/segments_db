@@ -1,9 +1,10 @@
 import logging
+import time
 from typing import Optional, List, Dict, Any
-from datetime import datetime, timezone
 
 from ..config.settings import SITES
 from ..database.netbox_storage import get_storage
+from .time_utils import get_current_utc
 
 logger = logging.getLogger(__name__)
 
@@ -14,11 +15,13 @@ class DatabaseUtils:
     async def find_existing_allocation(cluster_name: str, site: str) -> Optional[Dict[str, Any]]:
         """Find existing allocation for a cluster at a site
         Supports both single clusters and shared segments (comma-separated)
+
+        Uses optimized NetBox API filtering to reduce data transfer
         """
         storage = get_storage()
 
-        # Check for exact match first (single cluster or comma-separated list including this cluster)
-        exact_match = await storage.find_one({
+        # Use optimized find for exact match first
+        exact_match = await storage.find_one_optimized({
             "cluster_name": cluster_name,
             "site": site,
             "released": False
@@ -26,7 +29,8 @@ class DatabaseUtils:
         if exact_match:
             return exact_match
 
-        # Check for shared segments where this cluster is part of a comma-separated list
+        # For regex search (shared segments), we still need find_one
+        # but this is rare, so less impact
         shared_match = await storage.find_one({
             "cluster_name": {"$regex": f"(^|,){cluster_name}(,|$)"},
             "site": site,
@@ -35,23 +39,34 @@ class DatabaseUtils:
         return shared_match
     
     @staticmethod
-    async def find_and_allocate_segment(site: str, cluster_name: str) -> Optional[Dict[str, Any]]:
+    async def find_and_allocate_segment(site: str, cluster_name: str, vrf: str) -> Optional[Dict[str, Any]]:
         """Atomically find and allocate an available segment for a site
         Supports all subnet sizes (/24, /21, /16, etc.) for cluster allocation
+
+        Args:
+            site: Site to allocate from
+            cluster_name: Name of cluster to allocate to
+            vrf: VRF/Network to filter by (e.g., "Network1", "Network2") - REQUIRED
         """
         storage = get_storage()
-        allocation_time = datetime.now(timezone.utc)
+        allocation_time = get_current_utc()
+
+        # Build query filter with required VRF
+        query_filter = {
+            "site": site,
+            "cluster_name": None,
+            "vrf": vrf
+        }
+
+        logger.info(f"Allocating from site={site}, VRF={vrf}")
 
         # Use find_one_and_update for atomic operation - prevents race conditions
         # Find segments that are either never allocated (released: False, cluster_name: None)
         # OR have been released (released: True, cluster_name: None)
         # Sort by vlan_id to always allocate the smallest available VLAN ID first
+        t1 = time.time()
         result = await storage.find_one_and_update(
-            {
-                "site": site,
-                "cluster_name": None
-                # Remove subnet size restriction - allow all sizes
-            },
+            query_filter,
             {
                 "$set": {
                     "cluster_name": cluster_name,
@@ -62,6 +77,7 @@ class DatabaseUtils:
             },
             sort=[("vlan_id", 1)]  # Sort by vlan_id ascending to get smallest first
         )
+        logger.info(f"⏱️  storage.find_one_and_update took {(time.time() - t1)*1000:.0f}ms")
         return result
     
     @staticmethod
@@ -81,7 +97,7 @@ class DatabaseUtils:
     async def allocate_segment(segment_id: str, cluster_name: str) -> bool:
         """Allocate a segment to a cluster (kept for backward compatibility)"""
         storage = get_storage()
-        allocation_time = datetime.now(timezone.utc)
+        allocation_time = get_current_utc()
 
         result = await storage.update_one(
             {"_id": segment_id, "cluster_name": None},  # Added condition to prevent race
@@ -123,7 +139,7 @@ class DatabaseUtils:
                     "$set": {
                         "cluster_name": None,
                         "released": True,
-                        "released_at": datetime.now(timezone.utc)
+                        "released_at": get_current_utc()
                     }
                 }
             )
@@ -142,7 +158,7 @@ class DatabaseUtils:
                         "$set": {
                             "cluster_name": None,
                             "released": True,
-                            "released_at": datetime.now(timezone.utc)
+                            "released_at": get_current_utc()
                         }
                     }
                 )
