@@ -35,25 +35,40 @@ class StatsService:
     @staticmethod
     async def health_check() -> Dict[str, Any]:
         """Enhanced health check endpoint with comprehensive system validation"""
-        from ..database.netbox_storage import get_netbox_client
-        from ..config.settings import NETBOX_URL
+        from ..config.settings import STORAGE_BACKEND, MYSQL_HOST, MYSQL_PORT, MYSQL_DATABASE
 
         health_data = {
             "status": "healthy",
             "timestamp": datetime.now().isoformat(),
             "sites": SITES,
-            "storage_type": "netbox",
-            "netbox_url": NETBOX_URL
+            "storage_type": STORAGE_BACKEND
         }
 
-        try:
-            # Check NetBox connectivity
-            nb = get_netbox_client()
-            status = nb.status()
+        # Add storage-specific information
+        if STORAGE_BACKEND == "mysql":
+            health_data["mysql_host"] = MYSQL_HOST
+            health_data["mysql_port"] = MYSQL_PORT
+            health_data["mysql_database"] = MYSQL_DATABASE
+        else:
+            from ..config.settings import NETBOX_URL
+            health_data["netbox_url"] = NETBOX_URL
 
-            health_data["storage"] = "accessible"
-            health_data["netbox_version"] = status.get("netbox-version")
-            health_data["netbox_status"] = "connected"
+        try:
+            # Check storage connectivity
+            if STORAGE_BACKEND == "mysql":
+                # Test MySQL connectivity
+                from ..database.mysql_storage import get_mysql_pool
+                pool = await get_mysql_pool()
+                health_data["storage"] = "accessible"
+                health_data["mysql_status"] = "connected"
+            else:
+                # Check NetBox connectivity
+                from ..database.netbox_storage import get_netbox_client
+                nb = get_netbox_client()
+                status = nb.status()
+                health_data["storage"] = "accessible"
+                health_data["netbox_version"] = status.get("netbox-version")
+                health_data["netbox_status"] = "connected"
 
             # Test database operations - Get total segments count
             total_segments = 0

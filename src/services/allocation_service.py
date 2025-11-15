@@ -15,18 +15,14 @@ class AllocationService:
     
     @staticmethod
     async def allocate_vlan(request: VLANAllocationRequest) -> VLANAllocationResponse:
-        """Allocate a VLAN segment for a cluster
-
-        VRF/Network must be specified to allocate from a specific network
-        """
+        """Allocate a VLAN segment for a cluster"""
         start_time = time.time()
-        logger.info(f"Allocation request: cluster={request.cluster_name}, site={request.site}, vrf={request.vrf}")
+        logger.info(f"Allocation request: cluster={request.cluster_name}, site={request.site}")
 
         # Validate inputs
         t1 = time.time()
         Validators.validate_site(request.site)
         Validators.validate_cluster_name(request.cluster_name)
-        await Validators.validate_vrf(request.vrf)
         logger.info(f"⏱️  Validation took {(time.time() - t1)*1000:.0f}ms")
 
         try:
@@ -38,32 +34,31 @@ class AllocationService:
             logger.info(f"⏱️  Check existing allocation took {(time.time() - t2)*1000:.0f}ms")
 
             if existing:
-                logger.info(f"Returning existing allocation: VLAN {existing['vlan_id']} (VRF: {existing.get('vrf', 'N/A')}) for {request.cluster_name}")
+                logger.info(f"Returning existing allocation: VLAN {existing['vlan_id']} for {request.cluster_name}")
                 return VLANAllocationResponse(
                     vlan_id=existing["vlan_id"],
                     cluster_name=existing["cluster_name"],
                     site=existing["site"],
                     segment=existing["segment"],
                     epg_name=existing["epg_name"],
-                    vrf=existing.get("vrf", ""),
                     allocated_at=existing["allocated_at"]
                 )
 
-            # Atomically find and allocate an available segment for this site (optionally filtered by VRF)
+            # Atomically find and allocate an available segment for this site
             t3 = time.time()
             allocated_segment = await DatabaseUtils.find_and_allocate_segment(
-                request.site, request.cluster_name, request.vrf
+                request.site, request.cluster_name
             )
             logger.info(f"⏱️  Find and allocate segment took {(time.time() - t3)*1000:.0f}ms")
 
             if not allocated_segment:
-                logger.error(f"No available segments for site: {request.site} in VRF '{request.vrf}'")
+                logger.error(f"No available segments for site: {request.site}")
                 raise HTTPException(
                     status_code=503,
-                    detail=f"No available segments for site: {request.site} in VRF '{request.vrf}'"
+                    detail=f"No available segments for site: {request.site}"
                 )
 
-            logger.info(f"Allocated VLAN {allocated_segment['vlan_id']} (EPG: {allocated_segment['epg_name']}, VRF: {allocated_segment.get('vrf', 'N/A')}) to {request.cluster_name}")
+            logger.info(f"Allocated VLAN {allocated_segment['vlan_id']} (EPG: {allocated_segment['epg_name']}) to {request.cluster_name}")
             logger.info(f"⏱️  TOTAL allocation took {(time.time() - start_time)*1000:.0f}ms")
 
             return VLANAllocationResponse(
@@ -72,7 +67,6 @@ class AllocationService:
                 site=request.site,
                 segment=allocated_segment["segment"],
                 epg_name=allocated_segment["epg_name"],
-                vrf=allocated_segment.get("vrf", ""),
                 allocated_at=allocated_segment["allocated_at"]
             )
             

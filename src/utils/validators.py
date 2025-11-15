@@ -662,47 +662,4 @@ class Validators:
                 detail="Record was modified by another request. Please refresh and try again."
             )
 
-    @staticmethod
-    async def validate_vrf(vrf: str) -> None:
-        """Validate if VRF exists in NetBox
-
-        Args:
-            vrf: VRF name to validate
-
-        Raises:
-            HTTPException 400: If VRF is invalid or doesn't exist
-        """
-        from ..database.netbox_storage import NetBoxStorage
-
-        logger.info(f"Validating VRF: {vrf}")
-
-        if not vrf or not vrf.strip():
-            logger.warning("VRF name is empty")
-            raise HTTPException(
-                status_code=400,
-                detail="VRF name cannot be empty"
-            )
-
-        # Get available VRFs from NetBox
-        storage = NetBoxStorage()
-        try:
-            # Get VRFs from storage
-            available_vrfs = await storage.get_vrfs()
-
-            if vrf not in available_vrfs:
-                logger.warning(f"Invalid VRF requested: {vrf}, available VRFs: {available_vrfs}")
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Invalid VRF. Must be one of: {', '.join(available_vrfs)}"
-                )
-
-            logger.info(f"VRF validation passed: {vrf}")
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"Error validating VRF: {e}")
-            raise HTTPException(
-                status_code=500,
-                detail=f"Error validating VRF: {str(e)}"
-            )
 

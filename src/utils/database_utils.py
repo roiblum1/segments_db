@@ -48,26 +48,24 @@ class DatabaseUtils:
         return shared_match
     
     @staticmethod
-    async def find_and_allocate_segment(site: str, cluster_name: str, vrf: str) -> Optional[Dict[str, Any]]:
+    async def find_and_allocate_segment(site: str, cluster_name: str) -> Optional[Dict[str, Any]]:
         """Atomically find and allocate an available segment for a site
         Supports all subnet sizes (/24, /21, /16, etc.) for cluster allocation
 
         Args:
             site: Site to allocate from
             cluster_name: Name of cluster to allocate to
-            vrf: VRF/Network to filter by (e.g., "Network1", "Network2") - REQUIRED
         """
         storage = get_storage()
         allocation_time = get_current_utc()
 
-        # Build query filter with required VRF
+        # Build query filter
         query_filter = {
             "site": site,
-            "cluster_name": None,
-            "vrf": vrf
+            "cluster_name": None
         }
 
-        logger.info(f"Allocating from site={site}, VRF={vrf}")
+        logger.info(f"Allocating from site={site}")
 
         # Use find_one_and_update for atomic operation - prevents race conditions
         # Find segments that are either never allocated (released: False, cluster_name: None)
@@ -353,8 +351,3 @@ class DatabaseUtils:
 
         # IDs are already strings in JSON storage
         return segments
-    @staticmethod
-    async def get_vrfs() -> List[str]:
-        """Get list of available VRFs from NetBox"""
-        storage = get_storage()
-        return await storage.get_vrfs()

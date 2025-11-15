@@ -91,4 +91,4 @@ def setup_logging():
 
 # Server Configuration
 SERVER_HOST = os.getenv("SERVER_HOST", "0.0.0.0")
-SERVER_PORT = int(os.getenv("SERVER_PORT", "8000"))
+SERVER_PORT = int(os.getenv("PORT", os.getenv("SERVER_PORT", "9000")))

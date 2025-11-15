@@ -5,10 +5,15 @@ from fastapi.responses import HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
-from .config.settings import setup_logging, SITES, validate_site_prefixes
+from .config.settings import setup_logging, SITES, validate_site_prefixes, STORAGE_BACKEND
 from .api.routes import router
-from .database.netbox_storage import init_storage, close_storage
 import os
+
+# Dynamic storage import based on configuration
+if STORAGE_BACKEND == "mysql":
+    from .database.mysql_storage import init_storage, close_storage
+else:
+    from .database.netbox_storage import init_storage, close_storage
 
 # Setup logging
 logger = setup_logging()
@@ -23,7 +28,7 @@ async def lifespan(app: FastAPI):
         logger.info("Site prefixes validation passed")
 
         await init_storage()
-        logger.info(f"NetBox storage initialized. Managing sites: {SITES}")
+        logger.info(f"{STORAGE_BACKEND.upper()} storage initialized. Managing sites: {SITES}")
     except Exception as e:
         logger.error(f"Failed to initialize application: {e}")
         raise

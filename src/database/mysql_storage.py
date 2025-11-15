@@ -8,11 +8,10 @@ with a direct MySQL backend.
 Tables Used:
 - segments: IP address segments/subnets (main table)
 - vlans: VLAN definitions
-- vrfs: Virtual Routing and Forwarding (networks)
 - site_groups: Site organizational grouping
 - tenants: Tenant (fixed to "Redbull")
 - roles: Prefix roles (fixed to "Data")
-- vlan_groups: VLAN grouping by VRF and site
+- vlan_groups: VLAN grouping by site
 
 """
 
@@ -23,7 +22,7 @@ from datetime import datetime, timezone
 import asyncio
 import time
 import re
-from functools import lru_cache, wraps
+from functools import wraps
 
 from ..config.settings import (
     MYSQL_HOST, MYSQL_PORT, MYSQL_USER, MYSQL_PASSWORD,
@@ -37,8 +36,7 @@ _mysql_pool: Optional[aiomysql.Pool] = None
 
 # Cache for frequently accessed data
 _cache = {
-    "segments": {"data": None, "timestamp": 0, "ttl": 600},  # 10 minutes
-    "vrfs": {"data": None, "timestamp": 0, "ttl": 3600},  # 1 hour
+    "segments": {"data": None, "timestamp": 0, "ttl": 5},  # 5 seconds
     "redbull_tenant_id": {"data": None, "timestamp": 0, "ttl": 3600},
 }
 
@@ -81,7 +79,6 @@ def invalidate_cache(key: Optional[str] = None) -> None:
         logger.info("All cache invalidated")
 
 
-@lru_cache(maxsize=1)
 async def get_mysql_pool() -> aiomysql.Pool:
     """Get or create MySQL connection pool (singleton)"""
     global _mysql_pool
@@ -96,7 +93,7 @@ async def get_mysql_pool() -> aiomysql.Pool:
             db=MYSQL_DATABASE,
             minsize=5,
             maxsize=MYSQL_POOL_SIZE,
-            autocommit=False,
+            autocommit=True,
             charset='utf8mb4',
             connect_timeout=10
         )
@@ -183,15 +180,6 @@ class MySQLStorage:
 
         raise ValueError("Redbull tenant not found in database")
 
-    async def _get_vrf_id(self, vrf_name: str) -> Optional[int]:
-        """Get VRF ID by name"""
-        result = await self._execute_query(
-            "SELECT id FROM vrfs WHERE name = %s",
-            (vrf_name,),
-            fetch_one=True
-        )
-        return result['id'] if result else None
-
     async def _get_or_create_site_group(self, site: str) -> int:
         """Get or create site group"""
         slug = site.lower().replace('_', '-')
@@ -215,13 +203,9 @@ class MySQLStorage:
         logger.info(f"Created site group: {site}")
         return site_group_id
 
-    async def _get_or_create_vlan_group(self, vrf_name: str, site: str) -> int:
+    async def _get_or_create_vlan_group(self, site: str) -> int:
         """Get or create VLAN group"""
-        vrf_id = await self._get_vrf_id(vrf_name)
-        if not vrf_id:
-            raise ValueError(f"VRF '{vrf_name}' not found")
-
-        name = f"{vrf_name}-ClickCluster-{site}"
+        name = f"ClickCluster-{site}"
         slug = name.lower().replace('_', '-')
 
         # Try to get existing
@@ -236,8 +220,8 @@ class MySQLStorage:
 
         # Create new
         vlan_group_id = await self._execute_query(
-            "INSERT INTO vlan_groups (name, slug, vrf_id, site) VALUES (%s, %s, %s, %s)",
-            (name, slug, vrf_id, site)
+            "INSERT INTO vlan_groups (name, slug, site) VALUES (%s, %s, %s)",
+            (name, slug, site)
         )
 
         logger.info(f"Created VLAN group: {name}")
@@ -258,10 +242,10 @@ class MySQLStorage:
 
     # ==================== VLAN Management ====================
 
-    async def _get_or_create_vlan(self, vlan_id: int, epg_name: str, vrf_name: str, site: str) -> int:
+    async def _get_or_create_vlan(self, vlan_id: int, epg_name: str, site: str) -> int:
         """Get or create VLAN"""
         tenant_id = await self._get_redbull_tenant_id()
-        vlan_group_id = await self._get_or_create_vlan_group(vrf_name, site)
+        vlan_group_id = await self._get_or_create_vlan_group(site)
 
         # Check if VLAN exists
         result = await self._execute_query(
@@ -276,17 +260,37 @@ class MySQLStorage:
                 "UPDATE vlans SET name = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
                 (epg_name, result['id'])
             )
+            logger.debug(f"Updated VLAN {vlan_id} ({epg_name}) in group {vlan_group_id}")
             return result['id']
 
-        # Create new VLAN
-        vlan_db_id = await self._execute_query(
-            "INSERT INTO vlans (vlan_id, name, vlan_group_id, tenant_id, status) "
-            "VALUES (%s, %s, %s, %s, 'active')",
-            (vlan_id, epg_name, vlan_group_id, tenant_id)
-        )
-
-        logger.info(f"Created VLAN {vlan_id} ({epg_name}) in group {vlan_group_id}")
-        return vlan_db_id
+        # Create new VLAN with duplicate key handling
+        try:
+            vlan_db_id = await self._execute_query(
+                "INSERT INTO vlans (vlan_id, name, vlan_group_id, tenant_id, status) "
+                "VALUES (%s, %s, %s, %s, 'active')",
+                (vlan_id, epg_name, vlan_group_id, tenant_id)
+            )
+            logger.info(f"Created VLAN {vlan_id} ({epg_name}) in group {vlan_group_id}")
+            return vlan_db_id
+        except Exception as e:
+            # If duplicate key error, try to fetch the existing VLAN again (race condition)
+            if "Duplicate entry" in str(e) or "1062" in str(e):
+                logger.warning(f"Race condition detected for VLAN {vlan_id}, retrying fetch")
+                result = await self._execute_query(
+                    "SELECT id FROM vlans WHERE vlan_id = %s AND vlan_group_id = %s",
+                    (vlan_id, vlan_group_id),
+                    fetch_one=True
+                )
+                if result:
+                    # Update the name
+                    await self._execute_query(
+                        "UPDATE vlans SET name = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+                        (epg_name, result['id'])
+                    )
+                    logger.info(f"Updated existing VLAN {vlan_id} ({epg_name}) after race condition")
+                    return result['id']
+            # Re-raise if not a duplicate key error or if we still can't find it
+            raise
 
     async def _cleanup_unused_vlan(self, vlan_db_id: int):
         """Delete VLAN if not used by any segment"""
@@ -325,7 +329,7 @@ class MySQLStorage:
         # Cache miss - fetch from database
         logger.info("Cache MISS - fetching segments from MySQL")
 
-        # Build SQL query
+        # Build SQL query - only fetch all segments (no query filters applied at SQL level)
         where_clauses = []
         params = []
 
@@ -334,20 +338,12 @@ class MySQLStorage:
         where_clauses.append("s.tenant_id = %s")
         params.append(tenant_id)
 
-        # Add query filters
-        if "$or" not in query:
-            where_sql, where_params = self._build_where_clause(query)
-            if where_sql:
-                where_clauses.append(where_sql)
-                params.extend(where_params)
-
         where_str = " AND ".join(where_clauses) if where_clauses else "1=1"
 
         sql = f"""
             SELECT
                 s.id as _id,
                 s.prefix as segment,
-                v.name as vrf,
                 s.site,
                 vlan.vlan_id,
                 vlan.name as epg_name,
@@ -361,7 +357,6 @@ class MySQLStorage:
                 s.created_at,
                 s.updated_at
             FROM segments s
-            LEFT JOIN vrfs v ON s.vrf_id = v.id
             LEFT JOIN vlans vlan ON s.vlan_id = vlan.id
             WHERE {where_str}
         """
@@ -378,14 +373,15 @@ class MySQLStorage:
         # Convert to list of dicts
         result = [dict(row) for row in segments]
 
-        # Cache the result
+        # Cache the full unfiltered result
         _set_cache("segments", result)
 
-        # Apply $or filter if needed (in-memory)
-        if "$or" in query:
-            result = self._filter_segments_in_memory(result, query)
+        logger.info(f"Found {len(result)} segments in database, applying filters in memory")
 
-        logger.info(f"Found {len(result)} segments")
+        # Apply all query filters in memory (including $or)
+        result = self._filter_segments_in_memory(result, query)
+
+        logger.info(f"Filtered to {len(result)} segments matching query")
         return result
 
     def _build_where_clause(self, query: Dict[str, Any]) -> tuple:
@@ -421,7 +417,6 @@ class MySQLStorage:
         mapping = {
             "_id": "s.id",
             "segment": "s.prefix",
-            "vrf": "v.name",
             "site": "s.site",
             "vlan_id": "vlan.vlan_id",
             "epg_name": "vlan.name",
@@ -479,6 +474,15 @@ class MySQLStorage:
             elif "$ne" in value:
                 return segment_value != value["$ne"]
 
+        # Special handling for _id field (convert string to int for comparison)
+        if field == "_id":
+            try:
+                # Try to convert both to int for comparison
+                return int(segment_value) == int(value)
+            except (ValueError, TypeError):
+                # Fall back to string comparison if conversion fails
+                return str(segment_value) == str(value)
+
         # Exact match
         return segment_value == value
 
@@ -497,19 +501,14 @@ class MySQLStorage:
 
         Required fields:
         - segment (IP prefix)
-        - vrf (network name)
         - site
         - vlan_id
         - epg_name
         """
-        logger.info(f"Creating segment: {document.get('segment')} in VRF {document.get('vrf')} at site {document.get('site')}")
+        logger.info(f"Creating segment: {document.get('segment')} at site {document.get('site')}")
 
         # Get/create references
         tenant_id = await self._get_redbull_tenant_id()
-        vrf_id = await self._get_vrf_id(document['vrf'])
-        if not vrf_id:
-            raise ValueError(f"VRF '{document['vrf']}' not found")
-
         role_id = await self._get_role_id()
         site_group_id = await self._get_or_create_site_group(document['site'])
 
@@ -517,7 +516,6 @@ class MySQLStorage:
         vlan_db_id = await self._get_or_create_vlan(
             document['vlan_id'],
             document['epg_name'],
-            document['vrf'],
             document['site']
         )
 
@@ -525,13 +523,12 @@ class MySQLStorage:
         segment_id = await self._execute_query(
             """
             INSERT INTO segments
-            (prefix, vrf_id, site, site_group_id, vlan_id, tenant_id, role_id,
+            (prefix, site, site_group_id, vlan_id, tenant_id, role_id,
              status, cluster_name, dhcp, comments, description, allocated_at, released)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             """,
             (
                 document['segment'],
-                vrf_id,
                 document['site'],
                 site_group_id,
                 vlan_db_id,
@@ -559,15 +556,33 @@ class MySQLStorage:
         self,
         query: Dict[str, Any],
         update: Dict[str, Any],
-        upsert: bool = False
+        upsert: bool = False,
+        sort: Optional[List[tuple]] = None
     ) -> Optional[Dict[str, Any]]:
         """
         Find a segment and update it atomically
 
+        Args:
+            query: Query to find segment
+            update: Update operations
+            upsert: Not supported for MySQL
+            sort: List of (field, direction) tuples for sorting (1 = ASC, -1 = DESC)
+
         Update format: {"$set": {"field": "value"}}
         """
-        # Find segment
-        segment = await self.find_one(query)
+        # Find segment with optional sorting
+        if sort:
+            # Get all matching segments and sort
+            segments = await self.find(query)
+            if not segments:
+                segment = None
+            else:
+                # Sort segments
+                for field, direction in reversed(sort):
+                    segments.sort(key=lambda x: x.get(field, 0), reverse=(direction == -1))
+                segment = segments[0]
+        else:
+            segment = await self.find_one(query)
 
         if not segment:
             if upsert:
@@ -598,7 +613,6 @@ class MySQLStorage:
                 new_vlan_db_id = await self._get_or_create_vlan(
                     value,
                     updates["epg_name"],
-                    segment['vrf'],
                     segment['site']
                 )
                 set_clauses.append("vlan_id = %s")
@@ -609,7 +623,11 @@ class MySQLStorage:
                 # Handled with vlan_id
                 continue
 
-            if field == "description":
+            if field == "segment":
+                # Update the IP prefix
+                set_clauses.append("prefix = %s")
+                params.append(value)
+            elif field == "description":
                 # Map to comments
                 set_clauses.append("comments = %s")
                 params.append(value)
@@ -662,6 +680,11 @@ class MySQLStorage:
         # Return updated segment
         return await self.find_one({"_id": segment_id})
 
+    async def update_one(self, query: Dict[str, Any], update: Dict[str, Any]) -> bool:
+        """Update a segment (wrapper for find_one_and_update)"""
+        result = await self.find_one_and_update(query, update)
+        return result is not None
+
     async def delete_one(self, query: Dict[str, Any]) -> bool:
         """Delete a segment"""
         segment = await self.find_one(query)
@@ -691,29 +714,6 @@ class MySQLStorage:
 
     # ==================== Utility Methods ====================
 
-    async def get_vrfs(self) -> List[str]:
-        """Get list of available VRFs (cached for 1 hour)"""
-        cached_vrfs = _get_cached("vrfs")
-        if cached_vrfs is not None:
-            return cached_vrfs
-
-        t_start = time.time()
-        vrfs = await self._execute_query(
-            "SELECT name FROM vrfs ORDER BY name",
-            fetch_all=True
-        )
-        elapsed = (time.time() - t_start) * 1000
-
-        if elapsed > 2000:
-            logger.warning(f"⚠️  MYSQL SLOW: fetch VRFs took {elapsed:.0f}ms")
-        else:
-            logger.debug(f"⏱️  MYSQL OK: fetch VRFs took {elapsed:.0f}ms")
-
-        vrf_names = [row['name'] for row in vrfs]
-        _set_cache("vrfs", vrf_names)
-
-        return vrf_names
-
     async def count_documents(self, query: Dict[str, Any]) -> int:
         """Count segments matching query"""
         segments = await self.find(query)
@@ -729,3 +729,30 @@ class MySQLStorage:
 def get_storage() -> MySQLStorage:
     """Get MySQL storage instance"""
     return MySQLStorage()
+
+
+# Lifecycle functions for app startup/shutdown
+async def init_storage():
+    """Initialize MySQL storage - verify connection and test database"""
+    try:
+        logger.info("Initializing MySQL storage...")
+
+        # Test connection by executing a simple query
+        await get_mysql_pool()  # This will create the pool if needed
+
+        storage = MySQLStorage()
+
+        # Test basic query
+        segments = await storage.find({})
+        logger.info(f"MySQL connection successful - Found {len(segments)} segments")
+        logger.info(f"MySQL Database: {MYSQL_DATABASE} at {MYSQL_HOST}:{MYSQL_PORT}")
+
+    except Exception as e:
+        logger.error(f"Failed to connect to MySQL: {e}")
+        raise
+
+
+async def close_storage():
+    """Close MySQL storage - cleanup connections"""
+    logger.info("Closing MySQL storage connections")
+    await close_mysql_pool()

@@ -108,17 +108,17 @@ function showSuccess(message) {
     }, 5000);
 }
 
-function updateConnectionStatus(online) {
-    isOnline = online;
+function updateConnectionStatus(mysqlConnected) {
+    isOnline = mysqlConnected;
     const dot = document.getElementById('statusDot');
     const text = document.getElementById('statusText');
-    
-    if (online) {
+
+    if (mysqlConnected) {
         dot.classList.remove('offline');
-        text.textContent = 'Connected';
+        text.textContent = 'MySQL: Connected';
     } else {
         dot.classList.add('offline');
-        text.textContent = 'Offline';
+        text.textContent = 'MySQL: Disconnected';
     }
 }
 
@@ -191,36 +191,6 @@ async function loadSites() {
     }
 }
 
-async function loadVrfs() {
-    try {
-        console.log('Loading VRFs...');
-        const data = await fetchAPI('/vrfs');
-        console.log('VRFs data received:', data);
-        const vrfs = data.vrfs;
-
-        const segmentVrfSelect = document.getElementById('segmentVrf');
-        const allocationVrfSelect = document.getElementById('allocationVrf');
-
-        console.log('Found VRF selectors:', segmentVrfSelect, allocationVrfSelect);
-
-        // Populate segment form VRF dropdown (required)
-        segmentVrfSelect.innerHTML = '<option value="">Select VRF...</option>';
-        vrfs.forEach(vrf => {
-            segmentVrfSelect.innerHTML += `<option value="${vrf}">${vrf}</option>`;
-        });
-
-        // Populate allocation form VRF dropdown (required)
-        allocationVrfSelect.innerHTML = '<option value="">Select Network...</option>';
-        vrfs.forEach(vrf => {
-            allocationVrfSelect.innerHTML += `<option value="${vrf}">${vrf}</option>`;
-        });
-
-        console.log('VRFs loaded successfully:', vrfs);
-    } catch (error) {
-        console.error('Failed to load VRFs:', error);
-        showError('Failed to load VRFs: ' + error.message);
-    }
-}
 
 
 async function loadStats() {
@@ -292,7 +262,7 @@ async function loadSegments() {
         const container = document.getElementById('segmentsList');
 
         if (segments.length === 0) {
-            container.innerHTML = '<tr><td colspan="9" class="empty-state">No segments found</td></tr>';
+            container.innerHTML = '<tr><td colspan="8" class="empty-state">No segments found</td></tr>';
             return;
         }
 
@@ -301,7 +271,6 @@ async function loadSegments() {
             return `
                 <tr>
                     <td>${segment.site}</td>
-                    <td>${segment.vrf || '-'}</td>
                     <td><strong>${segment.vlan_id}</strong></td>
                     <td><code>${segment.epg_name}</code></td>
                     <td><code>${segment.segment}</code></td>
@@ -339,7 +308,7 @@ async function loadSegments() {
     } catch (error) {
         console.error('Failed to load segments:', error);
         document.getElementById('segmentsList').innerHTML =
-            '<tr><td colspan="9" class="empty-state">Failed to load segments</td></tr>';
+            '<tr><td colspan="8" class="empty-state">Failed to load segments</td></tr>';
     }
 }
 
@@ -396,21 +365,20 @@ async function importBulk() {
 
     for (const line of lines) {
         const parts = line.split(',').map(p => p.trim());
-        if (parts.length >= 6) {
+        if (parts.length >= 5) {
             const vlan = parseInt(parts[1], 10);
             if (!Number.isFinite(vlan)) continue; // skip bad rows
 
             // Parse dhcp as boolean
-            const dhcp = parts[5].toLowerCase() === 'true';
+            const dhcp = parts[4].toLowerCase() === 'true';
 
             segments.push({
                 site: parts[0],
                 vlan_id: vlan,
                 epg_name: parts[2],
                 segment: parts[3],
-                vrf: parts[4],
                 dhcp: dhcp,
-                description: parts[6] || ''
+                description: parts[5] || ''
             });
         }
     }
@@ -452,7 +420,6 @@ document.addEventListener('DOMContentLoaded', function() {
             vlan_id: parseInt(document.getElementById('vlanId').value),
             epg_name: document.getElementById('epgName').value,
             segment: document.getElementById('networkSegment').value,
-            vrf: document.getElementById('segmentVrf').value,
             dhcp: document.getElementById('segmentDhcp').checked,
             description: document.getElementById('segmentDescription').value
         };
@@ -481,8 +448,7 @@ document.addEventListener('DOMContentLoaded', function() {
 
         const request = {
             cluster_name: document.getElementById('clusterName').value,
-            site: document.getElementById('allocationSite').value,
-            vrf: document.getElementById('allocationVrf').value
+            site: document.getElementById('allocationSite').value
         };
 
         try {
@@ -497,7 +463,6 @@ document.addEventListener('DOMContentLoaded', function() {
                     VLAN ID: <strong>${result.vlan_id}</strong><br>
                     EPG: <strong>${result.epg_name}</strong><br>
                     Network: <strong>${result.segment}</strong><br>
-                    VRF: <strong>${result.vrf || 'N/A'}</strong><br>
                     Cluster: ${result.cluster_name}
                 </div>
             `;
@@ -576,11 +541,8 @@ document.addEventListener('DOMContentLoaded', function() {
     async function init() {
         try {
             console.log('Initializing application...');
-            await Promise.all([
-                loadSites(),
-                loadVrfs()
-            ]);
-            console.log('Sites and VRFs loaded, loading stats and segments...');
+            await loadSites();
+            console.log('Sites loaded, loading stats and segments...');
             await Promise.all([
                 loadStats(),
                 loadSegments()
@@ -606,8 +568,10 @@ document.addEventListener('DOMContentLoaded', function() {
     // Check connection status
     setInterval(async () => {
         try {
-            await fetchAPI('/health');
-            updateConnectionStatus(true);
+            const health = await fetchAPI('/health');
+            // Check if MySQL is connected based on the health response
+            const mysqlConnected = health && health.mysql_status === 'connected';
+            updateConnectionStatus(mysqlConnected);
         } catch {
             updateConnectionStatus(false);
         }
@@ -660,12 +624,6 @@ function showEditModal(segment) {
                         <input type="text" id="editNetworkSegment" value="${segment.segment}" required>
                     </div>
                     <div class="form-group">
-                        <label for="editVrf">VRF / Network</label>
-                        <select id="editVrf" required>
-                            <option value="">Select VRF...</option>
-                        </select>
-                    </div>
-                    <div class="form-group">
                         <label class="checkbox-label">
                             <input type="checkbox" id="editDhcp" ${segment.dhcp ? 'checked' : ''}>
                             <span>DHCP Enabled</span>
@@ -692,9 +650,8 @@ function showEditModal(segment) {
     // Add modal to DOM
     document.body.insertAdjacentHTML('beforeend', modalHTML);
 
-    // Load sites and VRFs into dropdowns and set current values
+    // Load sites into dropdowns and set current values
     loadSitesForEdit(segment.site);
-    loadVrfsForEdit(segment.vrf);
 
     // Add form submit handler
     document.getElementById('editSegmentForm').addEventListener('submit', (e) => {
@@ -726,25 +683,6 @@ async function loadSitesForEdit(selectedSite) {
     }
 }
 
-async function loadVrfsForEdit(selectedVrf) {
-    try {
-        const data = await fetchAPI('/vrfs');
-        const select = document.getElementById('editVrf');
-
-        select.innerHTML = '<option value="">Select VRF...</option>';
-        data.vrfs.forEach(vrf => {
-            const option = document.createElement('option');
-            option.value = vrf;
-            option.textContent = vrf;
-            if (vrf === selectedVrf) {
-                option.selected = true;
-            }
-            select.appendChild(option);
-        });
-    } catch (error) {
-        console.error('Failed to load VRFs for edit:', error);
-    }
-}
 
 async function updateSegment(segmentId) {
     const form = document.getElementById('editSegmentForm');
@@ -755,7 +693,6 @@ async function updateSegment(segmentId) {
         vlan_id: parseInt(document.getElementById('editVlanId').value),
         epg_name: document.getElementById('editEpgName').value.trim(),
         segment: document.getElementById('editNetworkSegment').value.trim(),
-        vrf: document.getElementById('editVrf').value,
         dhcp: document.getElementById('editDhcp').checked,
         description: document.getElementById('editDescription').value.trim()
     };
