@@ -8,7 +8,7 @@ set -e
 PROJECT_NAME="vlan-manager"
 IMAGE_NAME="vlan-manager"
 IMAGE_TAG="${1:-latest}"
-SAVE_DIR="$(dirname "$0")/../podman"
+SAVE_DIR="$(dirname "$0")/../images"
 
 echo "🏗️  VLAN Manager - Build and Save Container Image"
 echo "=================================================="
@@ -74,9 +74,19 @@ if [ $? -eq 0 ]; then
 
 ## Environment Variables Required
 \`\`\`
-MONGODB_URL=mongodb://username:password@your-mongo-host:27017/vlan_manager?authSource=admin
-DATABASE_NAME=vlan_manager
+# NetBox Connection (Required)
+NETBOX_URL=https://your-netbox-instance.com
+NETBOX_TOKEN=your-api-token-here
+NETBOX_SSL_VERIFY=true
+
+# Site Configuration (Required)
 SITES=site1,site2,site3
+SITE_PREFIXES=site1:192,site2:193,site3:194
+
+# Server Configuration (Optional)
+SERVER_HOST=0.0.0.0
+SERVER_PORT=8000
+LOG_LEVEL=INFO
 \`\`\`
 EOF
     

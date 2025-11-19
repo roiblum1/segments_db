@@ -293,29 +293,55 @@ class SegmentService:
         """Create multiple segments at once"""
         logger.info(f"Bulk creating {len(segments)} segments")
         
+        if not segments or len(segments) == 0:
+            logger.warning("Bulk create called with empty segments list")
+            raise HTTPException(status_code=400, detail="No valid segments found in CSV data. Please check the format: site,vlan_id,epg_name,segment,vrf,dhcp,description")
+        
         try:
             created = 0
             errors = []
+            # Track created segments within this bulk operation to detect duplicates in CSV
+            created_in_bulk = set()
             
-            for segment in segments:
+            for idx, segment in enumerate(segments, start=1):
                 try:
+                    logger.debug(f"Processing segment {idx}/{len(segments)}: site={segment.site}, vlan_id={segment.vlan_id}, segment={segment.segment}")
+                    
+                    # Check for duplicates within this bulk request first
+                    segment_key = (segment.site, segment.vlan_id)
+                    if segment_key in created_in_bulk:
+                        error_msg = f"Duplicate entry: VLAN {segment.vlan_id} for site {segment.site} appears multiple times in CSV"
+                        logger.warning(f"Row {idx}: {error_msg}")
+                        errors.append(error_msg)
+                        continue
+                    
                     # Validate segment data
                     await SegmentService._validate_segment_data(segment)
                     
-                    # Check if VLAN ID already exists for this site
+                    # Check if VLAN ID already exists for this site (in database)
                     if await DatabaseUtils.check_vlan_exists(segment.site, segment.vlan_id):
-                        errors.append(f"VLAN {segment.vlan_id} already exists for site {segment.site}")
+                        error_msg = f"VLAN {segment.vlan_id} already exists for site {segment.site}"
+                        logger.warning(f"Row {idx}: {error_msg}")
+                        errors.append(error_msg)
                         continue
                     
                     # Create the segment
                     segment_data = SegmentService._segment_to_dict(segment)
                     await DatabaseUtils.create_segment(segment_data)
+                    created_in_bulk.add(segment_key)  # Track successful creation
                     created += 1
+                    logger.debug(f"Successfully created segment {idx}: site={segment.site}, vlan_id={segment.vlan_id}")
                     
                 except HTTPException as e:
-                    errors.append(f"Site {segment.site}, VLAN {segment.vlan_id}: {e.detail}")
+                    error_msg = f"Row {idx} (Site {segment.site}, VLAN {segment.vlan_id}): {e.detail}"
+                    logger.error(f"Validation error for segment {idx}: {error_msg}", exc_info=True)
+                    errors.append(error_msg)
                 except Exception as e:
-                    errors.append(f"Site {segment.site}, VLAN {segment.vlan_id}: {str(e)}")
+                    error_msg = f"Row {idx} (Site {segment.site}, VLAN {segment.vlan_id}): {str(e)}"
+                    logger.error(f"Error creating segment {idx}: {error_msg}", exc_info=True)
+                    errors.append(error_msg)
+            
+            logger.info(f"Bulk creation complete: {created} created, {len(errors)} errors")
             
             return {
                 "message": f"Created {created} segments",
@@ -323,8 +349,10 @@ class SegmentService:
                 "errors": errors if errors else None
             }
 
+        except HTTPException:
+            raise
         except Exception as e:
-            logger.error(f"Error in bulk creation: {e}")
+            logger.error(f"Error in bulk creation: {e}", exc_info=True)
             raise HTTPException(status_code=500, detail=str(e))
 
     @staticmethod

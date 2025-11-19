@@ -1,5 +1,6 @@
 from typing import Optional, List
-from fastapi import APIRouter, BackgroundTasks
+import logging
+from fastapi import APIRouter, BackgroundTasks, HTTPException
 
 from ..models.schemas import (
     VLANAllocationRequest, VLANAllocationResponse, 
@@ -50,9 +51,9 @@ async def get_segment(segment_id: str):
     return await SegmentService.get_segment_by_id(segment_id)
 
 @router.put("/segments/{segment_id}")
-async def update_segment(segment_id: str, segment: Segment, background_tasks: BackgroundTasks):
+async def update_segment(segment_id: str, segment: Segment):
     """Update a segment"""
-    return await SegmentService.update_segment(segment_id, segment, background_tasks)
+    return await SegmentService.update_segment(segment_id, segment)
 
 @router.put("/segments/{segment_id}/clusters")
 async def update_segment_clusters(segment_id: str, request: dict):
@@ -68,6 +69,13 @@ async def delete_segment(segment_id: str):
 @router.post("/segments/bulk")
 async def create_segments_bulk(segments: List[Segment]):
     """Create multiple segments at once"""
+    logger = logging.getLogger(__name__)
+    
+    if not segments or len(segments) == 0:
+        logger.warning("Bulk create called with empty segments list")
+        raise HTTPException(status_code=400, detail="No segments provided. Please check your CSV data format.")
+    
+    logger.info(f"Received bulk create request with {len(segments)} segments")
     return await SegmentService.create_segments_bulk(segments)
 
 # Statistics and Configuration Routes

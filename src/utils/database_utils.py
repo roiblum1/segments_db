@@ -238,7 +238,11 @@ class DatabaseUtils:
 
     @staticmethod
     async def create_segment(segment_data: Dict[str, Any]) -> str:
-        """Create a new segment"""
+        """Create a new segment
+        
+        Returns:
+            Segment ID as string
+        """
         storage = get_storage()
 
         new_segment = {
@@ -250,7 +254,15 @@ class DatabaseUtils:
         }
 
         result = await storage.insert_one(new_segment)
-        return result
+        # insert_one returns a dict with "_id" field, extract it
+        if isinstance(result, dict) and "_id" in result:
+            return str(result["_id"])
+        elif isinstance(result, str):
+            return result
+        else:
+            logger.warning(f"Unexpected return type from insert_one: {type(result)}, value: {result}")
+            # Fallback: try to get ID from result
+            return str(result.get("_id", result)) if isinstance(result, dict) else str(result)
 
     @staticmethod
     async def get_segment_by_id(segment_id: str) -> Optional[Dict[str, Any]]:

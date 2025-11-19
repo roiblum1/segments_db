@@ -392,31 +392,53 @@ async function importBulk() {
 
     // Split on CRLF or LF safely (works when embedded in Python triple-quoted strings)
     const lines = csvData.split(/\r?\n/).filter(l => l.trim().length > 0);
+    console.log(`Parsing ${lines.length} CSV lines`);
     const segments = [];
+    const skippedRows = [];
 
-    for (const line of lines) {
+    for (let i = 0; i < lines.length; i++) {
+        const line = lines[i];
         const parts = line.split(',').map(p => p.trim());
-        if (parts.length >= 6) {
-            const vlan = parseInt(parts[1], 10);
-            if (!Number.isFinite(vlan)) continue; // skip bad rows
-
-            // Parse dhcp as boolean
-            const dhcp = parts[5].toLowerCase() === 'true';
-
-            segments.push({
-                site: parts[0],
-                vlan_id: vlan,
-                epg_name: parts[2],
-                segment: parts[3],
-                vrf: parts[4],
-                dhcp: dhcp,
-                description: parts[6] || ''
-            });
+        
+        if (parts.length < 6) {
+            console.warn(`Row ${i + 1}: Skipped - only ${parts.length} columns found (expected at least 6). Line: ${line}`);
+            skippedRows.push(`Row ${i + 1}: Insufficient columns (found ${parts.length}, need 6)`);
+            continue;
         }
+        
+        const vlan = parseInt(parts[1], 10);
+        if (!Number.isFinite(vlan) || vlan < 1 || vlan > 4094) {
+            console.warn(`Row ${i + 1}: Skipped - invalid VLAN ID '${parts[1]}'. Line: ${line}`);
+            skippedRows.push(`Row ${i + 1}: Invalid VLAN ID '${parts[1]}' (must be 1-4094)`);
+            continue;
+        }
+
+        // Parse dhcp as boolean
+        const dhcp = parts[5].toLowerCase() === 'true';
+
+        segments.push({
+            site: parts[0],
+            vlan_id: vlan,
+            epg_name: parts[2],
+            segment: parts[3],
+            vrf: parts[4],
+            dhcp: dhcp,
+            description: parts[6] || ''
+        });
     }
 
+    console.log(`Parsed ${segments.length} valid segments, skipped ${skippedRows.length} rows`);
+
     if (segments.length === 0) {
-        showError('No valid segments found in CSV data');
+        let errorMsg = 'No valid segments found in CSV data.';
+        if (skippedRows.length > 0) {
+            errorMsg += '\n\nIssues found:\n' + skippedRows.slice(0, 5).join('\n');
+            if (skippedRows.length > 5) {
+                errorMsg += `\n... and ${skippedRows.length - 5} more issues`;
+            }
+        }
+        errorMsg += '\n\nExpected format: site,vlan_id,epg_name,segment,vrf,dhcp,description';
+        showError(errorMsg);
         return;
     }
 

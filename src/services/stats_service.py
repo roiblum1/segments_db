@@ -35,7 +35,7 @@ class StatsService:
     @staticmethod
     async def health_check() -> Dict[str, Any]:
         """Enhanced health check endpoint with comprehensive system validation"""
-        from ..database.netbox_storage import get_netbox_client
+        from ..database.netbox_client import get_netbox_client
         from ..config.settings import NETBOX_URL
 
         health_data = {

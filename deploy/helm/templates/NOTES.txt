@@ -19,7 +19,8 @@
 2. Configuration Summary:
    - Sites: {{ .Values.config.sites }}
    - Site Prefixes: {{ .Values.config.sitePrefixes }}
-   - Database: {{ .Values.config.databaseName }}
+   - NetBox URL: {{ .Values.netbox.url }}
+   - NetBox SSL Verify: {{ .Values.netbox.sslVerify }}
 
 3. Features Available:
    ✓ Site-specific IP prefix validation

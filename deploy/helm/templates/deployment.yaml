@@ -89,7 +89,7 @@ spec:
               valueFrom:
                 secretKeyRef:
                   name: {{ if .Values.netbox.existingSecret }}{{ .Values.netbox.existingSecret }}{{ else }}{{ include "vlan-manager.fullname" . }}-netbox{{ end }}
-                  key: {{ .Values.netbox.existingSecretKey }}
+                  key: {{ if .Values.netbox.existingSecret }}{{ .Values.netbox.existingSecretKey }}{{ else }}netbox-token{{ end }}
           {{- with .Values.startupProbe }}
           startupProbe:
             {{- toYaml . | nindent 12 }}
