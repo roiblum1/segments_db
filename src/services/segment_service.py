@@ -5,6 +5,8 @@ from fastapi import HTTPException
 from ..models.schemas import Segment
 from ..utils.database_utils import DatabaseUtils
 from ..utils.validators import Validators
+from ..utils.error_handlers import handle_netbox_errors, retry_on_network_error
+from ..utils.logging_decorators import log_function_call, log_operation_timing
 
 logger = logging.getLogger(__name__)
 
@@ -64,138 +66,109 @@ class SegmentService:
         }
     
     @staticmethod
+    @handle_netbox_errors
+    @retry_on_network_error(max_retries=3)
+    @log_operation_timing("get_segments", threshold_ms=1000)
     async def get_segments(site: Optional[str] = None, allocated: Optional[bool] = None) -> List[Dict[str, Any]]:
         """Get segments with optional filters"""
-        logger.info(f"Getting segments: site={site}, allocated={allocated}")
-        try:
-            segments = await DatabaseUtils.get_segments_with_filters(site, allocated)
-            logger.info(f"Retrieved {len(segments)} segments")
-            return segments
-        except Exception as e:
-            logger.error(f"Error retrieving segments: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+        segments = await DatabaseUtils.get_segments_with_filters(site, allocated)
+        logger.debug(f"Retrieved {len(segments)} segments")
+        return segments
     
     @staticmethod
+    @handle_netbox_errors
+    @retry_on_network_error(max_retries=3)
+    @log_operation_timing("search_segments", threshold_ms=1000)
     async def search_segments(
-        search_query: str, 
-        site: Optional[str] = None, 
+        search_query: str,
+        site: Optional[str] = None,
         allocated: Optional[bool] = None
     ) -> List[Dict[str, Any]]:
         """Search segments by cluster name, EPG name, VLAN ID, description, or segment"""
-        logger.info(f"Searching segments: query='{search_query}', site={site}, allocated={allocated}")
-        
-        try:
-            segments = await DatabaseUtils.search_segments(search_query, site, allocated)
-            logger.debug(f"Found {len(segments)} matching segments")
-            return segments
-        except Exception as e:
-            logger.error(f"Error searching segments: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+        segments = await DatabaseUtils.search_segments(search_query, site, allocated)
+        logger.debug(f"Found {len(segments)} matching segments for query '{search_query}'")
+        return segments
     
     @staticmethod
+    @handle_netbox_errors
+    @retry_on_network_error(max_retries=3)
+    @log_operation_timing("create_segment", threshold_ms=2000)
     async def create_segment(segment: Segment) -> Dict[str, str]:
         """Create a new segment"""
         logger.info(f"Creating segment: site={segment.site}, vlan_id={segment.vlan_id}, epg={segment.epg_name}")
-        logger.debug(f"DEBUG: Full segment data - {segment}")
-        
-        try:
-            # Validate segment data
-            logger.debug(f"DEBUG: Starting validation for segment {segment.vlan_id}")
-            await SegmentService._validate_segment_data(segment)
-            logger.debug(f"DEBUG: Validation completed for segment {segment.vlan_id}")
-            
-            # Check if VLAN ID already exists for this site
-            if await DatabaseUtils.check_vlan_exists(segment.site, segment.vlan_id):
-                logger.warning(f"VLAN {segment.vlan_id} already exists for site {segment.site}")
-                raise HTTPException(
-                    status_code=400, 
-                    detail=f"VLAN {segment.vlan_id} already exists for site {segment.site}"
-                )
-            
-            # Create the segment
-            segment_data = SegmentService._segment_to_dict(segment)
-            
-            segment_id = await DatabaseUtils.create_segment(segment_data)
-            logger.info(f"Created segment with ID: {segment_id}")
-            
-            return {"message": "Segment created", "id": segment_id}
-            
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"Error creating segment: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+
+        # Validate segment data
+        await SegmentService._validate_segment_data(segment)
+
+        # Check if VLAN ID already exists for this site
+        if await DatabaseUtils.check_vlan_exists(segment.site, segment.vlan_id):
+            raise HTTPException(
+                status_code=400,
+                detail=f"VLAN {segment.vlan_id} already exists for site {segment.site}"
+            )
+
+        # Create the segment
+        segment_data = SegmentService._segment_to_dict(segment)
+        segment_id = await DatabaseUtils.create_segment(segment_data)
+
+        logger.info(f"Created segment with ID: {segment_id}")
+        return {"message": "Segment created", "id": segment_id}
     
     @staticmethod
+    @handle_netbox_errors
+    @retry_on_network_error(max_retries=3)
+    @log_operation_timing("get_segment_by_id", threshold_ms=500)
     async def get_segment_by_id(segment_id: str) -> Dict[str, Any]:
         """Get a single segment by ID"""
-        logger.info(f"Getting segment: {segment_id}")
-        
-        try:
-            # Validate ObjectId format
-            Validators.validate_object_id(segment_id)
-            
-            # Get the segment
-            segment = await DatabaseUtils.get_segment_by_id(segment_id)
-            if not segment:
-                logger.warning(f"Segment not found: {segment_id}")
-                raise HTTPException(status_code=404, detail="Segment not found")
-            
-            # Convert ObjectId to string
-            segment["_id"] = str(segment["_id"])
-            
-            logger.info(f"Retrieved segment {segment_id}: site={segment.get('site')}, vlan_id={segment.get('vlan_id')}")
-            return segment
-            
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"Error retrieving segment: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+        # Validate ObjectId format
+        Validators.validate_object_id(segment_id)
+
+        # Get the segment
+        segment = await DatabaseUtils.get_segment_by_id(segment_id)
+        if not segment:
+            raise HTTPException(status_code=404, detail="Segment not found")
+
+        # Convert ObjectId to string
+        segment["_id"] = str(segment["_id"])
+
+        logger.debug(f"Retrieved segment {segment_id}: site={segment.get('site')}, vlan_id={segment.get('vlan_id')}")
+        return segment
     
     @staticmethod
+    @handle_netbox_errors
+    @retry_on_network_error(max_retries=3)
+    @log_operation_timing("update_segment", threshold_ms=2000)
     async def update_segment(segment_id: str, updated_segment: Segment) -> Dict[str, str]:
         """Update a segment"""
-        logger.info(f"Updating segment: {segment_id}")
-        
-        try:
-            # Validate ObjectId format
-            Validators.validate_object_id(segment_id)
-            
-            # Validate segment data (exclude self from overlap check)
-            await SegmentService._validate_segment_data(updated_segment, exclude_id=segment_id)
-            
-            # Check if segment exists
-            existing_segment = await DatabaseUtils.get_segment_by_id(segment_id)
-            if not existing_segment:
-                logger.warning(f"Segment not found: {segment_id}")
-                raise HTTPException(status_code=404, detail="Segment not found")
-            
-            # Check if VLAN ID change would conflict (only if changing VLAN ID or site)
-            if (existing_segment["vlan_id"] != updated_segment.vlan_id or 
-                existing_segment["site"] != updated_segment.site):
-                if await DatabaseUtils.check_vlan_exists_excluding_id(updated_segment.site, updated_segment.vlan_id, segment_id):
-                    logger.warning(f"VLAN {updated_segment.vlan_id} already exists for site {updated_segment.site}")
-                    raise HTTPException(
-                        status_code=400, 
-                        detail=f"VLAN {updated_segment.vlan_id} already exists for site {updated_segment.site}"
-                    )
-            
-            # Update the segment
-            update_data = SegmentService._segment_to_dict(updated_segment)
-            success = await DatabaseUtils.update_segment_by_id(segment_id, update_data)
-            
-            if not success:
-                raise HTTPException(status_code=500, detail="Failed to update segment")
-            
-            logger.info(f"Updated segment {segment_id}")
-            return {"message": "Segment updated successfully"}
-            
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"Error updating segment: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+        # Validate ObjectId format
+        Validators.validate_object_id(segment_id)
+
+        # Validate segment data (exclude self from overlap check)
+        await SegmentService._validate_segment_data(updated_segment, exclude_id=segment_id)
+
+        # Check if segment exists
+        existing_segment = await DatabaseUtils.get_segment_by_id(segment_id)
+        if not existing_segment:
+            raise HTTPException(status_code=404, detail="Segment not found")
+
+        # Check if VLAN ID change would conflict (only if changing VLAN ID or site)
+        if (existing_segment["vlan_id"] != updated_segment.vlan_id or
+            existing_segment["site"] != updated_segment.site):
+            if await DatabaseUtils.check_vlan_exists_excluding_id(updated_segment.site, updated_segment.vlan_id, segment_id):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"VLAN {updated_segment.vlan_id} already exists for site {updated_segment.site}"
+                )
+
+        # Update the segment
+        update_data = SegmentService._segment_to_dict(updated_segment)
+        success = await DatabaseUtils.update_segment_by_id(segment_id, update_data)
+
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to update segment")
+
+        logger.info(f"Updated segment {segment_id}")
+        return {"message": "Segment updated successfully"}
 
     @staticmethod
     async def update_segment_clusters(segment_id: str, cluster_names: str) -> Dict[str, str]:
@@ -257,36 +230,29 @@ class SegmentService:
             raise HTTPException(status_code=500, detail=str(e))
 
     @staticmethod
+    @handle_netbox_errors
+    @retry_on_network_error(max_retries=3)
+    @log_operation_timing("delete_segment", threshold_ms=2000)
     async def delete_segment(segment_id: str) -> Dict[str, str]:
         """Delete a segment"""
-        logger.info(f"Deleting segment: {segment_id}")
-        
-        try:
-            # Validate ObjectId format
-            Validators.validate_object_id(segment_id)
-            
-            # Check if segment exists and is not allocated
-            segment = await DatabaseUtils.get_segment_by_id(segment_id)
-            if not segment:
-                logger.warning(f"Segment not found: {segment_id}")
-                raise HTTPException(status_code=404, detail="Segment not found")
-            
-            # Validate segment can be deleted
-            Validators.validate_segment_not_allocated(segment)
-            
-            # Delete the segment
-            success = await DatabaseUtils.delete_segment_by_id(segment_id)
-            if not success:
-                raise HTTPException(status_code=500, detail="Failed to delete segment")
-            
-            logger.info(f"Deleted segment {segment_id}")
-            return {"message": "Segment deleted"}
-            
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"Error deleting segment: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+        # Validate ObjectId format
+        Validators.validate_object_id(segment_id)
+
+        # Check if segment exists and is not allocated
+        segment = await DatabaseUtils.get_segment_by_id(segment_id)
+        if not segment:
+            raise HTTPException(status_code=404, detail="Segment not found")
+
+        # Validate segment can be deleted
+        Validators.validate_segment_not_allocated(segment)
+
+        # Delete the segment
+        success = await DatabaseUtils.delete_segment_by_id(segment_id)
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to delete segment")
+
+        logger.info(f"Deleted segment {segment_id}")
+        return {"message": "Segment deleted"}
     
     @staticmethod
     async def create_segments_bulk(segments: List[Segment]) -> Dict[str, Any]:
@@ -356,13 +322,11 @@ class SegmentService:
             raise HTTPException(status_code=500, detail=str(e))
 
     @staticmethod
+    @handle_netbox_errors
+    @retry_on_network_error(max_retries=3)
+    @log_operation_timing("get_vrfs", threshold_ms=1000)
     async def get_vrfs() -> Dict[str, Any]:
         """Get list of available VRFs from NetBox"""
-        logger.info("Fetching VRFs from NetBox")
-        try:
-            vrfs = await DatabaseUtils.get_vrfs()
-            logger.info(f"Retrieved {len(vrfs)} VRFs")
-            return {"vrfs": vrfs}
-        except Exception as e:
-            logger.error(f"Error retrieving VRFs: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+        vrfs = await DatabaseUtils.get_vrfs()
+        logger.debug(f"Retrieved {len(vrfs)} VRFs")
+        return {"vrfs": vrfs}
