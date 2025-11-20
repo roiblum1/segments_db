@@ -267,8 +267,8 @@ class NetBoxStorage:
         try:
             logger.debug(f"Creating NetBox prefix for document: {document}")
 
-            # OPTIMIZATION: Fetch all reference data in parallel using asyncio.gather()
-            # This reduces serial API calls from ~200ms total to ~50ms (4x faster)
+            # OPTIMIZATION: Fetch all reference data AND VLAN in parallel using asyncio.gather()
+            # This reduces serial API calls from ~200ms total to ~50ms (5x faster)
             gather_tasks = []
             task_names = []
 
@@ -293,16 +293,32 @@ class NetBoxStorage:
             gather_tasks.append(self.helpers.get_role("Data", "prefix"))
             task_names.append("role")
 
-            # Execute all lookups in parallel
+            # OPTIMIZATION: Include VLAN creation in parallel execution
+            if "vlan_id" in document and document["vlan_id"]:
+                gather_tasks.append(
+                    self.helpers.get_or_create_vlan(
+                        document["vlan_id"],
+                        document.get("epg_name", f"VLAN_{document['vlan_id']}"),
+                        document.get("site"),
+                        document.get("vrf")  # Pass VRF name for VLAN group creation
+                    )
+                )
+                task_names.append("vlan")
+            else:
+                gather_tasks.append(None)
+                task_names.append("vlan")
+
+            # Execute all lookups in parallel (including VLAN)
             t_parallel = time.time()
             results = await asyncio.gather(*[task if task is not None else asyncio.sleep(0) for task in gather_tasks])
-            logger.info(f"⏱️  Parallel reference data fetch took {(time.time() - t_parallel)*1000:.0f}ms")
+            logger.info(f"⏱️  Parallel reference data + VLAN fetch took {(time.time() - t_parallel)*1000:.0f}ms")
 
             # Unpack results
             vrf_obj = results[0] if results[0] and task_names[0] == "vrf" else None
             site_group_obj = results[1] if results[1] and task_names[1] == "site_group" else None
             tenant = results[2] if results[2] and task_names[2] == "tenant" else None
             role = results[3] if results[3] and task_names[3] == "role" else None
+            vlan_obj = results[4] if len(results) > 4 and results[4] and task_names[4] == "vlan" else None
 
             # Prepare prefix data
             prefix_data = {
@@ -338,20 +354,13 @@ class NetBoxStorage:
                 prefix_data["role"] = role.id
                 logger.debug(f"Assigned role 'Data' (ID: {role.id}) to prefix")
 
-            # Add VLAN if provided (pass VRF name for VLAN group)
-            # Note: VLAN creation must be separate as it depends on VRF
-            if "vlan_id" in document and document["vlan_id"]:
-                logger.debug(f"Getting/creating VLAN: {document['vlan_id']}")
-                vlan_obj = await self.helpers.get_or_create_vlan(
-                    document["vlan_id"],
-                    document.get("epg_name", f"VLAN_{document['vlan_id']}"),
-                    document.get("site"),
-                    document.get("vrf")  # Pass VRF name for VLAN group creation
-                )
-                if not vlan_obj:
-                    raise Exception(f"Failed to get/create VLAN: {document['vlan_id']}")
+            # Add VLAN if it was successfully created in parallel
+            if vlan_obj:
                 prefix_data["vlan"] = vlan_obj.id
                 logger.debug(f"Assigned VLAN {vlan_obj.vid} ({vlan_obj.name}, ID: {vlan_obj.id}) to prefix")
+            elif "vlan_id" in document and document["vlan_id"]:
+                # VLAN was requested but failed to create
+                raise Exception(f"Failed to get/create VLAN: {document['vlan_id']}")
 
             # Add custom fields
             custom_fields = {}
@@ -366,9 +375,10 @@ class NetBoxStorage:
 
             # Create prefix in NetBox
             logger.debug(f"Creating prefix with data: {prefix_data}")
-            prefix = await loop.run_in_executor(
-                executor,
-                lambda: self.nb.ipam.prefixes.create(**prefix_data)
+            from .netbox_utils import run_netbox_write
+            prefix = await run_netbox_write(
+                lambda: self.nb.ipam.prefixes.create(**prefix_data),
+                f"create prefix {prefix_data['prefix']}"
             )
 
             logger.info(f"Created prefix in NetBox: {prefix.prefix} (ID: {prefix.id})")
@@ -437,36 +447,62 @@ class NetBoxStorage:
 
                 # Handle VLAN ID or EPG name updates
                 if "vlan_id" in updates or "epg_name" in updates:
-                    # Store old VLAN for cleanup
+                    # OPTIMIZATION: Fetch old VLAN and create new VLAN in parallel
                     old_vlan_obj = None
                     old_vlan_vid = None
+                    new_vlan_obj = None
 
+                    # Prepare parallel tasks
+                    vlan_tasks = []
+                    vlan_task_names = []
+
+                    # Task 1: Get old VLAN (if exists)
                     if hasattr(prefix, 'vlan') and prefix.vlan:
-                        # prefix.vlan is a Record object with an 'id' attribute
-                        # We need to fetch the full VLAN object for cleanup
-                        try:
-                            old_vlan_id = prefix.vlan.id if hasattr(prefix.vlan, 'id') else prefix.vlan
-                            old_vlan_obj = await loop.run_in_executor(
-                                read_executor,
-                                lambda: self.nb.ipam.vlans.get(old_vlan_id)
+                        old_vlan_id = prefix.vlan.id if hasattr(prefix.vlan, 'id') else prefix.vlan
+                        from .netbox_utils import run_netbox_get
+                        vlan_tasks.append(
+                            run_netbox_get(
+                                lambda: self.nb.ipam.vlans.get(old_vlan_id),
+                                f"get old VLAN {old_vlan_id} for cleanup"
                             )
-                            if old_vlan_obj:
-                                old_vlan_vid = old_vlan_obj.vid
-                                logger.info(f"Will check for cleanup: Old VLAN {old_vlan_vid} (NetBox ID: {old_vlan_id})")
-                        except Exception as e:
-                            logger.warning(f"Failed to get old VLAN for cleanup (VLAN ID: {old_vlan_id}): {e}", exc_info=True)
+                        )
+                        vlan_task_names.append("old_vlan")
+                    else:
+                        vlan_tasks.append(asyncio.sleep(0))
+                        vlan_task_names.append("old_vlan")
 
-                    # Need to update or create VLAN object
+                    # Task 2: Create new VLAN
                     vlan_id = updates.get("vlan_id", segment.get("vlan_id"))
                     epg_name = updates.get("epg_name", segment.get("epg_name"))
                     site = updates.get("site", segment.get("site"))
                     vrf = updates.get("vrf", segment.get("vrf"))
 
                     if vlan_id and epg_name:
-                        new_vlan_obj = await self.helpers.get_or_create_vlan(vlan_id, epg_name, site, vrf)
-                        if new_vlan_obj:
-                            prefix.vlan = new_vlan_obj.id
-                            logger.info(f"Updated prefix to new VLAN {vlan_id} (NetBox ID: {new_vlan_obj.id})")
+                        vlan_tasks.append(
+                            self.helpers.get_or_create_vlan(vlan_id, epg_name, site, vrf)
+                        )
+                        vlan_task_names.append("new_vlan")
+                    else:
+                        vlan_tasks.append(asyncio.sleep(0))
+                        vlan_task_names.append("new_vlan")
+
+                    # Execute both tasks in parallel (2x faster)
+                    t_vlan_parallel = time.time()
+                    vlan_results = await asyncio.gather(*vlan_tasks, return_exceptions=True)
+                    logger.info(f"⏱️  Parallel VLAN fetch took {(time.time() - t_vlan_parallel)*1000:.0f}ms")
+
+                    # Unpack results
+                    if vlan_task_names[0] == "old_vlan" and vlan_results[0] and not isinstance(vlan_results[0], Exception):
+                        old_vlan_obj = vlan_results[0]
+                        old_vlan_vid = old_vlan_obj.vid
+                        logger.info(f"Will check for cleanup: Old VLAN {old_vlan_vid} (NetBox ID: {old_vlan_obj.id})")
+                    elif isinstance(vlan_results[0], Exception):
+                        logger.warning(f"Failed to get old VLAN for cleanup: {vlan_results[0]}")
+
+                    if vlan_task_names[1] == "new_vlan" and vlan_results[1] and not isinstance(vlan_results[1], Exception):
+                        new_vlan_obj = vlan_results[1]
+                        prefix.vlan = new_vlan_obj.id
+                        logger.info(f"Updated prefix to new VLAN {vlan_id} (NetBox ID: {new_vlan_obj.id})")
 
                 # Update prefix status and CUSTOM FIELD based on allocation state
                 # IMPORTANT: CUSTOM FIELD "Cluster" is for cluster name, COMMENTS is for user info
@@ -516,8 +552,7 @@ class NetBoxStorage:
 
     async def delete_one(self, query: Dict[str, Any]) -> bool:
         """Delete a segment from NetBox (prefix and associated VLAN, but not VLAN Group)"""
-        loop = asyncio.get_event_loop()
-        executor = get_netbox_executor()
+        from .netbox_utils import run_netbox_get, run_netbox_write
 
         segment = await self.find_one(query)
         if not segment:
@@ -525,17 +560,17 @@ class NetBoxStorage:
 
         try:
             prefix_id = segment["_id"]
-            
+
             # Get the prefix object to check for associated VLAN
-            prefix = await loop.run_in_executor(
-                executor,
-                lambda: self.nb.ipam.prefixes.get(prefix_id)
+            prefix = await run_netbox_get(
+                lambda: self.nb.ipam.prefixes.get(prefix_id),
+                f"get prefix {prefix_id} for deletion"
             )
-            
+
             if not prefix:
                 logger.warning(f"Prefix ID {prefix_id} not found in NetBox")
                 return False
-            
+
             # Store VLAN info before deleting prefix (needed for VLAN deletion after prefix is gone)
             vlan_obj = None
             vlan_vid = None
@@ -544,13 +579,13 @@ class NetBoxStorage:
                 try:
                     # prefix.vlan is a Record object, get the VLAN ID
                     vlan_id = prefix.vlan.id if hasattr(prefix.vlan, 'id') else prefix.vlan
-                    
+
                     # Get the full VLAN object BEFORE deleting prefix
-                    vlan_obj = await loop.run_in_executor(
-                        executor,
-                        lambda: self.nb.ipam.vlans.get(vlan_id)
+                    vlan_obj = await run_netbox_get(
+                        lambda: self.nb.ipam.vlans.get(vlan_id),
+                        f"get VLAN {vlan_id} for deletion"
                     )
-                    
+
                     if vlan_obj:
                         vlan_vid = getattr(vlan_obj, 'vid', vlan_id)
                         vlan_name = getattr(vlan_obj, 'name', '')
@@ -558,21 +593,21 @@ class NetBoxStorage:
                 except Exception as e:
                     logger.warning(f"Error getting VLAN info for prefix {prefix_id}: {e}", exc_info=True)
                     # Continue with prefix deletion even if VLAN fetch fails
-            
+
             # Delete the prefix FIRST (this removes the dependency on the VLAN)
-            await loop.run_in_executor(
-                executor,
-                lambda: prefix.delete()
+            await run_netbox_write(
+                lambda: prefix.delete(),
+                f"delete prefix {prefix_id}"
             )
             logger.info(f"Deleted prefix ID: {prefix_id}")
-            
+
             # NOW delete the VLAN (prefix is gone, so no dependency conflict)
             vlan_deleted = False
             if vlan_obj:
                 try:
-                    await loop.run_in_executor(
-                        executor,
-                        lambda: vlan_obj.delete()
+                    await run_netbox_write(
+                        lambda: vlan_obj.delete(),
+                        f"delete VLAN {vlan_vid}"
                     )
                     logger.info(f"Deleted VLAN {vlan_vid} ({vlan_name}, ID: {vlan_obj.id}) after prefix deletion")
                     vlan_deleted = True

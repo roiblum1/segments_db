@@ -14,13 +14,20 @@ import asyncio
 logger = logging.getLogger(__name__)
 
 # Simple in-memory cache with TTL
-# Balanced caching to reduce NetBox API calls while keeping data reasonably fresh
+# Optimized caching to reduce NetBox API calls while keeping data reasonably fresh
+# Now supports dynamic cache keys (e.g., site_group_{id}) with automatic TTL assignment
 _cache: Dict[str, Dict[str, Any]] = {
-    "prefixes": {"data": None, "timestamp": 0, "ttl": 120},  # 2 minutes - prefixes may change frequently
-    "vlans": {"data": None, "timestamp": 0, "ttl": 120},  # 2 minutes - VLANs may change frequently
-    "redbull_tenant_id": {"data": None, "timestamp": 0, "ttl": 3600},  # 1 hour - tenant ID rarely changes
-    "vrfs": {"data": None, "timestamp": 0, "ttl": 3600},  # 1 hour - VRFs rarely change
+    "prefixes": {"data": None, "timestamp": 0, "ttl": 300},  # 5 minutes
+    "vlans": {"data": None, "timestamp": 0, "ttl": 300},  # 5 minutes
+    "redbull_tenant_id": {"data": None, "timestamp": 0, "ttl": 300},  # 5 minutes
+    "vrfs": {"data": None, "timestamp": 0, "ttl": 300},  # 5 minutes
+    "site_groups": {"data": None, "timestamp": 0, "ttl": 300},  # 5 minutes
+    "roles": {"data": None, "timestamp": 0, "ttl": 300},  # 5 minutes
+    "tenants": {"data": None, "timestamp": 0, "ttl": 300},  # 5 minutes
 }
+
+# Default TTL for dynamic cache keys (e.g., site_group_123, role_data_prefix)
+_default_ttl = 300  # 5 minutes
 
 # In-flight request tracking to prevent duplicate concurrent fetches
 _inflight_requests: Dict[str, asyncio.Task] = {}
@@ -39,12 +46,23 @@ def get_cached(key: str) -> Optional[Any]:
     return None
 
 
-def set_cache(key: str, data: Any) -> None:
-    """Store data in cache with timestamp"""
-    if key in _cache:
-        _cache[key]["data"] = data
-        _cache[key]["timestamp"] = time.time()
-        logger.debug(f"Cache SET for {key} ({len(data) if isinstance(data, list) else 'N/A'} items)")
+def set_cache(key: str, data: Any, ttl: Optional[int] = None) -> None:
+    """Store data in cache with timestamp
+
+    Args:
+        key: Cache key (supports dynamic keys like 'site_group_123')
+        data: Data to cache
+        ttl: Optional TTL in seconds (uses default if not specified)
+    """
+    if key not in _cache:
+        # Dynamically create cache entry for new keys (e.g., site_group_{id})
+        effective_ttl = ttl if ttl is not None else _default_ttl
+        _cache[key] = {"data": None, "timestamp": 0, "ttl": effective_ttl}
+        logger.debug(f"Created dynamic cache entry for {key} with TTL={effective_ttl}s")
+
+    _cache[key]["data"] = data
+    _cache[key]["timestamp"] = time.time()
+    logger.debug(f"Cache SET for {key} ({len(data) if isinstance(data, list) else 'N/A'} items)")
 
 
 def invalidate_cache(key: Optional[str] = None) -> None:

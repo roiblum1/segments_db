@@ -19,9 +19,13 @@ def prefix_to_segment(prefix, nb_client) -> Dict[str, Any]:
     Metadata is extracted from STATUS and DESCRIPTION fields, not comments.
     Comments field is left free for user notes.
 
+    IMPORTANT: This function should NOT make NetBox API calls as it's called
+    in loops when converting multiple prefixes. Site groups are now pre-fetched
+    at startup and cached.
+
     Args:
         prefix: NetBox prefix object
-        nb_client: NetBox API client (for fetching site groups)
+        nb_client: NetBox API client (for accessing cached site group data)
     """
     from .netbox_cache import get_cached, set_cache
 
@@ -48,23 +52,28 @@ def prefix_to_segment(prefix, nb_client) -> Dict[str, Any]:
     # Only Prefixes should have Site Group scope
     if hasattr(prefix, 'scope_type') and prefix.scope_type and 'sitegroup' in str(prefix.scope_type).lower():
         if hasattr(prefix, 'scope_id') and prefix.scope_id:
-            # Use cached site groups to avoid repeated API calls
-            # Cache site_group lookups by ID
+            # Use cached site groups (pre-fetched at startup) to avoid API calls
+            # This is CRITICAL for performance - never makes blocking API calls
             cache_key = f"site_group_{prefix.scope_id}"
             site_group = get_cached(cache_key)
 
             if site_group is None:
-                # Need to fetch the site group to get its slug
-                try:
-                    site_group = nb_client.dcim.site_groups.get(prefix.scope_id)
-                    if site_group:
-                        set_cache(cache_key, site_group)
-                except Exception as e:
-                    logger.warning(f"Failed to fetch site group for prefix {prefix.id} (scope_id: {prefix.scope_id}): {e}", exc_info=True)
-                    site_group = None
-
-            if site_group:
-                site_slug = site_group.slug
+                # Site group not in cache - this shouldn't happen if pre-fetch worked
+                # Log warning but don't fetch (would block and spam NetBox)
+                logger.warning(f"Site group {prefix.scope_id} not found in cache for prefix {prefix.id}. "
+                             f"Pre-fetch may have failed. Site will be None for this segment.")
+                # Fallback: try to extract from prefix object itself if available
+                if hasattr(prefix, 'scope') and hasattr(prefix.scope, 'slug'):
+                    site_slug = prefix.scope.slug
+                    logger.info(f"Extracted site slug '{site_slug}' from prefix.scope object")
+            else:
+                # Extract slug from cached site group
+                if hasattr(site_group, 'slug'):
+                    site_slug = site_group.slug
+                elif isinstance(site_group, dict) and 'slug' in site_group:
+                    site_slug = site_group['slug']
+                else:
+                    logger.warning(f"Cached site group {prefix.scope_id} has no slug attribute")
 
     # Extract metadata from STATUS and DESCRIPTION
     status_val = prefix.status.value if hasattr(prefix.status, 'value') else str(prefix.status).lower()
