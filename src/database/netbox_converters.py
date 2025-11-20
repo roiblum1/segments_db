@@ -58,14 +58,15 @@ def prefix_to_segment(prefix, nb_client) -> Dict[str, Any]:
             site_group = get_cached(cache_key)
 
             if site_group is None:
-                # Site group not in cache - this shouldn't happen if pre-fetch worked
-                # Log warning but don't fetch (would block and spam NetBox)
-                logger.warning(f"Site group {prefix.scope_id} not found in cache for prefix {prefix.id}. "
-                             f"Pre-fetch may have failed. Site will be None for this segment.")
-                # Fallback: try to extract from prefix object itself if available
+                # Site group not in cache - fallback to extracting from prefix object
+                # This is expected behavior when prefix.scope is available
                 if hasattr(prefix, 'scope') and hasattr(prefix.scope, 'slug'):
                     site_slug = prefix.scope.slug
-                    logger.info(f"Extracted site slug '{site_slug}' from prefix.scope object")
+                    # Only log at debug level to avoid spam
+                    logger.debug(f"Site group {prefix.scope_id} not in cache, extracted slug '{site_slug}' from prefix.scope")
+                else:
+                    # Only warn if fallback also fails
+                    logger.warning(f"Site group {prefix.scope_id} not found in cache and no scope object available for prefix {prefix.id}")
             else:
                 # Extract slug from cached site group
                 if hasattr(site_group, 'slug'):
