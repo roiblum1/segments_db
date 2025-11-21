@@ -6,7 +6,7 @@ from ..models.schemas import Segment
 from ..utils.database_utils import DatabaseUtils
 from ..utils.validators import Validators
 from ..utils.error_handlers import handle_netbox_errors, retry_on_network_error
-from ..utils.logging_decorators import log_function_call, log_operation_timing
+from ..utils.logging_decorators import log_operation_timing
 
 logger = logging.getLogger(__name__)
 
@@ -171,63 +171,59 @@ class SegmentService:
         return {"message": "Segment updated successfully"}
 
     @staticmethod
+    @handle_netbox_errors
+    @retry_on_network_error(max_retries=3)
+    @log_operation_timing("update_segment_clusters", threshold_ms=2000)
     async def update_segment_clusters(segment_id: str, cluster_names: str) -> Dict[str, str]:
         """Update cluster assignment for a segment (for shared segments)"""
         from datetime import datetime, timezone
         logger.info(f"Updating cluster assignment for segment: {segment_id}")
-        
-        try:
-            # Validate ObjectId format
-            Validators.validate_object_id(segment_id)
-            
-            # Check if segment exists
-            existing_segment = await DatabaseUtils.get_segment_by_id(segment_id)
-            if not existing_segment:
-                logger.warning(f"Segment not found: {segment_id}")
-                raise HTTPException(status_code=404, detail="Segment not found")
-            
-            # Clean up cluster names
-            clean_cluster_names = cluster_names.strip() if cluster_names else None
-            
-            # Update the segment cluster assignment
-            update_data = {}
-            if clean_cluster_names:
-                # Validate cluster names format (comma-separated, no special chars)
-                cluster_list = [name.strip() for name in clean_cluster_names.split(",")]
-                validated_clusters = []
-                for cluster in cluster_list:
-                    if cluster and cluster.replace("-", "").replace("_", "").isalnum():
-                        validated_clusters.append(cluster)
-                
-                if validated_clusters:
-                    update_data["cluster_name"] = ",".join(validated_clusters)
-                    update_data["allocated_at"] = datetime.now(timezone.utc)
-                    update_data["released"] = False
-                    update_data["released_at"] = None
-                else:
-                    # No valid clusters, release the segment
-                    update_data["cluster_name"] = None
-                    update_data["released"] = True
-                    update_data["released_at"] = datetime.now(timezone.utc)
+
+        # Validate ObjectId format
+        Validators.validate_object_id(segment_id)
+
+        # Check if segment exists
+        existing_segment = await DatabaseUtils.get_segment_by_id(segment_id)
+        if not existing_segment:
+            logger.warning(f"Segment not found: {segment_id}")
+            raise HTTPException(status_code=404, detail="Segment not found")
+
+        # Clean up cluster names
+        clean_cluster_names = cluster_names.strip() if cluster_names else None
+
+        # Update the segment cluster assignment
+        update_data = {}
+        if clean_cluster_names:
+            # Validate cluster names format (comma-separated, no special chars)
+            cluster_list = [name.strip() for name in clean_cluster_names.split(",")]
+            validated_clusters = []
+            for cluster in cluster_list:
+                if cluster and cluster.replace("-", "").replace("_", "").isalnum():
+                    validated_clusters.append(cluster)
+
+            if validated_clusters:
+                update_data["cluster_name"] = ",".join(validated_clusters)
+                update_data["allocated_at"] = datetime.now(timezone.utc)
+                update_data["released"] = False
+                update_data["released_at"] = None
             else:
-                # Empty cluster names, release the segment
+                # No valid clusters, release the segment
                 update_data["cluster_name"] = None
                 update_data["released"] = True
                 update_data["released_at"] = datetime.now(timezone.utc)
-            
-            success = await DatabaseUtils.update_segment_by_id(segment_id, update_data)
-            
-            if not success:
-                raise HTTPException(status_code=500, detail="Failed to update segment clusters")
-            
-            logger.info(f"Updated cluster assignment for segment {segment_id}")
-            return {"message": "Segment cluster assignment updated successfully"}
-            
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"Error updating segment clusters: {e}")
-            raise HTTPException(status_code=500, detail=str(e))
+        else:
+            # Empty cluster names, release the segment
+            update_data["cluster_name"] = None
+            update_data["released"] = True
+            update_data["released_at"] = datetime.now(timezone.utc)
+
+        success = await DatabaseUtils.update_segment_by_id(segment_id, update_data)
+
+        if not success:
+            raise HTTPException(status_code=500, detail="Failed to update segment clusters")
+
+        logger.info(f"Updated cluster assignment for segment {segment_id}")
+        return {"message": "Segment cluster assignment updated successfully"}
 
     @staticmethod
     @handle_netbox_errors

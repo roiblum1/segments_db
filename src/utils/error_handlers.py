@@ -387,3 +387,53 @@ async def batch_process_with_retry(
         results.extend(batch_results)
 
     return results
+
+
+def netbox_operation(operation_name: str, threshold_ms: int = 1000, max_retries: int = 3):
+    """
+    Combined decorator for NetBox operations that applies all standard patterns:
+    - Error handling and conversion to HTTP exceptions
+    - Retry logic with exponential backoff
+    - Operation timing with performance logging
+
+    This decorator combines @handle_netbox_errors, @retry_on_network_error,
+    and @log_operation_timing to reduce repetitive decorator stacking.
+
+    Args:
+        operation_name: Name of the operation for logging
+        threshold_ms: Performance threshold in milliseconds (default: 1000ms)
+        max_retries: Maximum number of retry attempts (default: 3)
+
+    Usage:
+        @netbox_operation("create_segment", threshold_ms=2000, max_retries=3)
+        async def create_segment(segment_data):
+            # Your code here
+            pass
+
+    Example - Before:
+        @staticmethod
+        @handle_netbox_errors
+        @retry_on_network_error(max_retries=3)
+        @log_operation_timing("create_segment", threshold_ms=2000)
+        async def create_segment(segment: Segment):
+            ...
+
+    Example - After:
+        @staticmethod
+        @netbox_operation("create_segment", threshold_ms=2000, max_retries=3)
+        async def create_segment(segment: Segment):
+            ...
+    """
+    from ..utils.logging_decorators import log_operation_timing
+
+    def decorator(func: Callable) -> Callable:
+        # Apply decorators in correct order (innermost to outermost):
+        # 1. Log timing (innermost - measures actual function execution)
+        # 2. Retry logic (middle - retries on failure)
+        # 3. Error handling (outermost - converts all errors to HTTP exceptions)
+        decorated_func = log_operation_timing(operation_name, threshold_ms=threshold_ms)(func)
+        decorated_func = retry_on_network_error(max_retries=max_retries)(decorated_func)
+        decorated_func = handle_netbox_errors(decorated_func)
+        return decorated_func
+
+    return decorator

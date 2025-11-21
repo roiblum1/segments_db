@@ -3,9 +3,32 @@ import logging
 import sys
 
 # NetBox Configuration
-NETBOX_URL = os.getenv("NETBOX_URL", "https://srcc3192.cloud.netboxapp.com")
-NETBOX_TOKEN = os.getenv("NETBOX_TOKEN", "892ee583fa47f1682ef258f8df00fbeea11f6ebc")
+# CRITICAL: These MUST be set as environment variables - never hardcode credentials!
+NETBOX_URL = os.getenv("NETBOX_URL")
+NETBOX_TOKEN = os.getenv("NETBOX_TOKEN")
 NETBOX_SSL_VERIFY = os.getenv("NETBOX_SSL_VERIFY", "true").lower() in ("true", "1", "yes")
+
+# Validate required environment variables at startup
+if not NETBOX_URL:
+    error_msg = (
+        "CRITICAL CONFIGURATION ERROR: NETBOX_URL environment variable is not set!\n"
+        "Please set NETBOX_URL in your environment or .env file.\n"
+        "Example: export NETBOX_URL='https://your-netbox-instance.com'"
+    )
+    print(f"ERROR: {error_msg}", file=sys.stderr)
+    raise ValueError(error_msg)
+
+if not NETBOX_TOKEN:
+    error_msg = (
+        "CRITICAL CONFIGURATION ERROR: NETBOX_TOKEN environment variable is not set!\n"
+        "Please set NETBOX_TOKEN in your environment or .env file.\n"
+        "Generate a token in NetBox: User Menu → API Tokens\n"
+        "Example: export NETBOX_TOKEN='your-api-token-here'\n"
+        "\n"
+        "⚠️  SECURITY WARNING: Never hardcode credentials in source code!"
+    )
+    print(f"ERROR: {error_msg}", file=sys.stderr)
+    raise ValueError(error_msg)
 
 # Sites Configuration
 SITES = os.getenv("SITES", "site1,site2,site3").split(",")
