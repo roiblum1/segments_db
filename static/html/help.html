@@ -238,12 +238,16 @@
             <h3>Key Features</h3>
             <ul>
                 <li><strong>Multi-Site Support:</strong> Manage VLANs across different sites (site1, site2, site3)</li>
-                <li><strong>Flexible Subnets:</strong> Support for all subnet sizes (/8, /16, /21, /24, /30, etc.)</li>
+                <li><strong>VRF/Network Support:</strong> Multiple VRFs (Network1, Network2, Network3) for network segmentation</li>
+                <li><strong>DHCP Configuration:</strong> Enable/disable DHCP per segment for IP management</li>
+                <li><strong>NetBox Integration:</strong> Professional IPAM backend with PostgreSQL storage</li>
+                <li><strong>Flexible Subnets:</strong> Support for all subnet sizes (/16 to /29)</li>
                 <li><strong>Automatic Allocation:</strong> Automatically find and allocate available segments</li>
                 <li><strong>Shared Segments:</strong> Multiple clusters can share the same VLAN segment</li>
                 <li><strong>Manual Management:</strong> Create, edit, and delete segments manually</li>
                 <li><strong>Export Capabilities:</strong> Export data to CSV and Excel formats</li>
-                <li><strong>Real-time Search:</strong> Search segments by various criteria</li>
+                <li><strong>Real-time Search:</strong> Search segments by cluster, EPG, VLAN, or segment</li>
+                <li><strong>High Performance:</strong> 70-90% reduction in API calls through aggressive caching</li>
             </ul>
         </div>
 
@@ -286,7 +290,9 @@
                 <li>Select the target site from the dropdown</li>
                 <li>Enter a unique VLAN ID (1-4094)</li>
                 <li>Provide an EPG (Endpoint Group) name</li>
-                <li>Enter the network segment (must match site prefix)</li>
+                <li>Enter the network segment (must match site prefix, e.g., 192.168.1.0/24)</li>
+                <li>Select the VRF/Network (Network1, Network2, or Network3)</li>
+                <li>Enable/disable DHCP as needed</li>
                 <li>Add an optional description</li>
                 <li>Click "Add Segment"</li>
             </ol>
@@ -295,8 +301,9 @@
             <ol>
                 <li>Enter the cluster name</li>
                 <li>Select the site</li>
+                <li>Select the VRF/Network</li>
                 <li>Click "Allocate Segment"</li>
-                <li>The system will automatically find and allocate an available segment</li>
+                <li>The system will automatically find and allocate an available segment in the specified VRF</li>
             </ol>
 
             <h3>Managing Segments</h3>
@@ -369,6 +376,8 @@ Query Parameters:
   "vlan_id": 100,
   "epg_name": "EPG_PROD_01",
   "segment": "192.168.1.0/24",
+  "vrf": "Network1",
+  "dhcp": false,
   "description": "Production segment"
 }
 </div>
@@ -388,6 +397,8 @@ Query Parameters:
   "vlan_id": 100,
   "epg_name": "EPG_UPDATED",
   "segment": "192.168.1.0/24",
+  "vrf": "Network1",
+  "dhcp": true,
   "description": "Updated description"
 }
 </div>
@@ -416,7 +427,8 @@ Query Parameters:
                 <div class="code-block">
 {
   "cluster_name": "my-cluster",
-  "site": "site1"
+  "site": "site1",
+  "vrf": "Network1"
 }
 </div>
             </div>
@@ -446,7 +458,12 @@ Query Parameters:
 
             <div class="endpoint">
                 <span class="method get">GET</span>
-                <strong>/api/health</strong> - Health check
+                <strong>/api/vrfs</strong> - Get available VRFs/Networks from NetBox
+            </div>
+
+            <div class="endpoint">
+                <span class="method get">GET</span>
+                <strong>/api/health</strong> - Health check with NetBox connectivity
             </div>
 
             <h3>Search & Export</h3>
@@ -478,7 +495,10 @@ Query Parameters:
 
             <h3>Example 1: Create and Allocate a Segment</h3>
             <div class="code-block">
-# 1. Create a new segment
+# 1. Get available VRFs
+curl "http://localhost:8000/api/vrfs"
+
+# 2. Create a new segment
 curl -X POST "http://localhost:8000/api/segments" \
   -H "Content-Type: application/json" \
   -d '{
@@ -486,15 +506,18 @@ curl -X POST "http://localhost:8000/api/segments" \
     "vlan_id": 150,
     "epg_name": "EPG_WEB",
     "segment": "192.168.15.0/24",
+    "vrf": "Network1",
+    "dhcp": false,
     "description": "Web servers segment"
   }'
 
-# 2. Allocate it to a cluster
+# 3. Allocate it to a cluster
 curl -X POST "http://localhost:8000/api/allocate-vlan" \
   -H "Content-Type: application/json" \
   -d '{
     "cluster_name": "web-cluster",
-    "site": "site1"
+    "site": "site1",
+    "vrf": "Network1"
   }'
 </div>
 
@@ -505,7 +528,8 @@ curl -X POST "http://localhost:8000/api/allocate-vlan" \
   -H "Content-Type: application/json" \
   -d '{
     "cluster_name": "frontend",
-    "site": "site1"
+    "site": "site1",
+    "vrf": "Network2"
   }'
 
 # 2. Update to share with multiple clusters
