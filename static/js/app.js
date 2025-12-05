@@ -4,6 +4,8 @@ let currentSite = '';
 let currentSearchQuery = '';
 let isOnline = true;
 let isDarkMode = localStorage.getItem('darkMode') === 'true';
+let networkSiteMapping = {}; // Maps network -> [sites]
+let allSites = []; // All configured sites
 
 // Export Functions - Make explicitly global
 window.exportData = async function exportData(format) {
@@ -161,12 +163,30 @@ async function fetchAPI(endpoint, options = {}) {
     }
 }
 
+async function loadNetworkSiteMapping() {
+    try {
+        console.log('Loading network-site mapping...');
+        const data = await fetchAPI('/network-site-mapping');
+        console.log('Network-site mapping received:', data);
+        networkSiteMapping = data.mapping;
+
+        // Extract all unique sites across all networks
+        allSites = [...new Set(Object.values(networkSiteMapping).flat())].sort();
+        console.log('Network-site mapping loaded:', networkSiteMapping);
+        console.log('All sites:', allSites);
+    } catch (error) {
+        console.error('Failed to load network-site mapping:', error);
+        showError('Failed to load network-site mapping: ' + error.message);
+    }
+}
+
 async function loadSites() {
     try {
         console.log('Loading sites...');
         const data = await fetchAPI('/sites');
         console.log('Sites data received:', data);
         const sites = data.sites;
+        allSites = sites; // Backup in case mapping fails
 
         const segmentSiteSelect = document.getElementById('segmentSite');
         const allocationSiteSelect = document.getElementById('allocationSite');
@@ -174,13 +194,13 @@ async function loadSites() {
 
         console.log('Found site selectors:', segmentSiteSelect, allocationSiteSelect, siteFilterSelect);
 
-        segmentSiteSelect.innerHTML = '<option value="">Select site...</option>';
-        allocationSiteSelect.innerHTML = '<option value="">Select site...</option>';
+        // Initially populate with all sites (will be filtered by network selection)
+        segmentSiteSelect.innerHTML = '<option value="">Select network first...</option>';
+        allocationSiteSelect.innerHTML = '<option value="">Select network first...</option>';
         siteFilterSelect.innerHTML = '<option value="">All Sites</option>';
 
+        // Site filter shows all sites (not network-dependent)
         sites.forEach(site => {
-            segmentSiteSelect.innerHTML += `<option value="${site}">${site}</option>`;
-            allocationSiteSelect.innerHTML += `<option value="${site}">${site}</option>`;
             siteFilterSelect.innerHTML += `<option value="${site}">${site}</option>`;
         });
 
@@ -215,10 +235,44 @@ async function loadVrfs() {
             allocationVrfSelect.innerHTML += `<option value="${vrf}">${vrf}</option>`;
         });
 
+        // Add event listeners to filter sites based on selected network
+        segmentVrfSelect.addEventListener('change', function() {
+            updateSitesForNetwork('segmentSite', this.value);
+        });
+
+        allocationVrfSelect.addEventListener('change', function() {
+            updateSitesForNetwork('allocationSite', this.value);
+        });
+
         console.log('VRFs loaded successfully:', vrfs);
     } catch (error) {
         console.error('Failed to load VRFs:', error);
         showError('Failed to load VRFs: ' + error.message);
+    }
+}
+
+function updateSitesForNetwork(siteSelectId, selectedNetwork) {
+    const siteSelect = document.getElementById(siteSelectId);
+
+    if (!selectedNetwork) {
+        siteSelect.innerHTML = '<option value="">Select network first...</option>';
+        return;
+    }
+
+    // Get available sites for this network
+    const availableSites = networkSiteMapping[selectedNetwork] || [];
+
+    console.log(`Updating ${siteSelectId} for network ${selectedNetwork}, available sites:`, availableSites);
+
+    // Populate site dropdown with available sites for this network
+    siteSelect.innerHTML = '<option value="">Select site...</option>';
+
+    if (availableSites.length === 0) {
+        siteSelect.innerHTML += '<option value="" disabled>No sites available for this network</option>';
+    } else {
+        availableSites.forEach(site => {
+            siteSelect.innerHTML += `<option value="${site}">${site}</option>`;
+        });
     }
 }
 
@@ -598,11 +652,13 @@ document.addEventListener('DOMContentLoaded', function() {
     async function init() {
         try {
             console.log('Initializing application...');
+            // Load network-site mapping first, then load sites and VRFs
+            await loadNetworkSiteMapping();
             await Promise.all([
                 loadSites(),
                 loadVrfs()
             ]);
-            console.log('Sites and VRFs loaded, loading stats and segments...');
+            console.log('Sites, VRFs, and mapping loaded, loading stats and segments...');
             await Promise.all([
                 loadStats(),
                 loadSegments()

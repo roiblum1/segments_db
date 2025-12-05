@@ -89,6 +89,25 @@ async def get_vrfs():
     """Get list of available VRFs from NetBox"""
     return await SegmentService.get_vrfs()
 
+@router.get("/network-site-mapping")
+async def get_network_site_mapping():
+    """Get mapping of networks to available sites"""
+    from ..config.settings import NETWORK_SITE_IP_PREFIXES
+
+    # Build mapping: {network: [sites]}
+    mapping = {}
+    for (network, site) in NETWORK_SITE_IP_PREFIXES.keys():
+        if network not in mapping:
+            mapping[network] = []
+        if site not in mapping[network]:
+            mapping[network].append(site)
+
+    # Sort sites for each network
+    for network in mapping:
+        mapping[network] = sorted(mapping[network])
+
+    return {"mapping": mapping}
+
 @router.get("/stats")
 async def get_stats():
     """Get statistics per site"""
