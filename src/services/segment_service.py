@@ -18,6 +18,7 @@ class SegmentService:
         """Common validation for segment data"""
         # Basic field validation
         Validators.validate_site(segment.site)
+        await Validators.validate_vrf(segment.vrf)  # VRF validation (async)
         Validators.validate_epg_name(segment.epg_name)
         Validators.validate_vlan_id(segment.vlan_id)
 
@@ -101,11 +102,11 @@ class SegmentService:
         # Validate segment data
         await SegmentService._validate_segment_data(segment)
 
-        # Check if VLAN ID already exists for this site
-        if await DatabaseUtils.check_vlan_exists(segment.site, segment.vlan_id):
+        # Check if VLAN ID already exists for this (network, site) combination
+        if await DatabaseUtils.check_vlan_exists(segment.site, segment.vlan_id, segment.vrf):
             raise HTTPException(
                 status_code=400,
-                detail=f"VLAN {segment.vlan_id} already exists for site {segment.site}"
+                detail=f"VLAN {segment.vlan_id} already exists for network '{segment.vrf}' at site '{segment.site}'"
             )
 
         # Create the segment
@@ -152,13 +153,14 @@ class SegmentService:
         if not existing_segment:
             raise HTTPException(status_code=404, detail="Segment not found")
 
-        # Check if VLAN ID change would conflict (only if changing VLAN ID or site)
+        # Check if VLAN ID change would conflict (only if changing VLAN ID, site, or VRF)
         if (existing_segment["vlan_id"] != updated_segment.vlan_id or
-            existing_segment["site"] != updated_segment.site):
-            if await DatabaseUtils.check_vlan_exists_excluding_id(updated_segment.site, updated_segment.vlan_id, segment_id):
+            existing_segment["site"] != updated_segment.site or
+            existing_segment.get("vrf") != updated_segment.vrf):
+            if await DatabaseUtils.check_vlan_exists_excluding_id(updated_segment.site, updated_segment.vlan_id, segment_id, updated_segment.vrf):
                 raise HTTPException(
                     status_code=400,
-                    detail=f"VLAN {updated_segment.vlan_id} already exists for site {updated_segment.site}"
+                    detail=f"VLAN {updated_segment.vlan_id} already exists for network '{updated_segment.vrf}' at site '{updated_segment.site}'"
                 )
 
         # Update the segment
@@ -270,20 +272,20 @@ class SegmentService:
                 try:
                     logger.debug(f"Processing segment {idx}/{len(segments)}: site={segment.site}, vlan_id={segment.vlan_id}, segment={segment.segment}")
                     
-                    # Check for duplicates within this bulk request first
-                    segment_key = (segment.site, segment.vlan_id)
+                    # Check for duplicates within this bulk request first (network+site+vlan scope)
+                    segment_key = (segment.vrf, segment.site, segment.vlan_id)
                     if segment_key in created_in_bulk:
-                        error_msg = f"Duplicate entry: VLAN {segment.vlan_id} for site {segment.site} appears multiple times in CSV"
+                        error_msg = f"Duplicate entry: VLAN {segment.vlan_id} for network '{segment.vrf}' at site '{segment.site}' appears multiple times in CSV"
                         logger.warning(f"Row {idx}: {error_msg}")
                         errors.append(error_msg)
                         continue
-                    
+
                     # Validate segment data
                     await SegmentService._validate_segment_data(segment)
-                    
-                    # Check if VLAN ID already exists for this site (in database)
-                    if await DatabaseUtils.check_vlan_exists(segment.site, segment.vlan_id):
-                        error_msg = f"VLAN {segment.vlan_id} already exists for site {segment.site}"
+
+                    # Check if VLAN ID already exists for this (network, site) combination (in database)
+                    if await DatabaseUtils.check_vlan_exists(segment.site, segment.vlan_id, segment.vrf):
+                        error_msg = f"VLAN {segment.vlan_id} already exists for network '{segment.vrf}' at site '{segment.site}'"
                         logger.warning(f"Row {idx}: {error_msg}")
                         errors.append(error_msg)
                         continue

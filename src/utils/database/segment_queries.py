@@ -37,19 +37,44 @@ class SegmentQueries:
         return segments
 
     @staticmethod
-    async def check_vlan_exists(site: str, vlan_id: int) -> bool:
-        """Check if VLAN ID already exists for a site"""
+    async def check_vlan_exists(site: str, vlan_id: int, vrf: str = None) -> bool:
+        """Check if VLAN ID already exists for a (network, site) combination
+
+        Args:
+            site: Site name
+            vlan_id: VLAN ID
+            vrf: VRF/Network name (required for multi-network support)
+
+        Returns:
+            True if VLAN exists for this (vrf, site, vlan_id) combination
+        """
         storage = get_storage()
 
-        existing = await storage.find_one({
+        query = {
             "site": site,
             "vlan_id": vlan_id
-        })
+        }
+
+        # Add VRF to query if provided (multi-network support)
+        if vrf:
+            query["vrf"] = vrf
+
+        existing = await storage.find_one(query)
         return existing is not None
 
     @staticmethod
-    async def check_vlan_exists_excluding_id(site: str, vlan_id: int, exclude_id: str) -> bool:
-        """Check if VLAN ID already exists for a site, excluding a specific segment ID"""
+    async def check_vlan_exists_excluding_id(site: str, vlan_id: int, exclude_id: str, vrf: str = None) -> bool:
+        """Check if VLAN ID already exists for a (network, site) combination, excluding a specific segment ID
+
+        Args:
+            site: Site name
+            vlan_id: VLAN ID
+            exclude_id: Segment ID to exclude from check
+            vrf: VRF/Network name (required for multi-network support)
+
+        Returns:
+            True if VLAN exists for this (vrf, site, vlan_id) combination (excluding specified ID)
+        """
         storage = get_storage()
 
         query = {
@@ -58,7 +83,11 @@ class SegmentQueries:
             "_id": {"$ne": exclude_id}
         }
 
-        logger.debug(f"Checking VLAN existence: site={site}, vlan_id={vlan_id}, exclude_id={exclude_id}")
+        # Add VRF to query if provided (multi-network support)
+        if vrf:
+            query["vrf"] = vrf
+
+        logger.debug(f"Checking VLAN existence: vrf={vrf}, site={site}, vlan_id={vlan_id}, exclude_id={exclude_id}")
 
         existing = await storage.find_one(query)
 
