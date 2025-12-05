@@ -34,14 +34,29 @@ class NetworkValidators:
 
         # Validate that prefix mapping exists for this network+site combination
         if expected_prefix is None:
+            # Show available combinations for this network or this site
             available_combinations = list(NETWORK_SITE_IP_PREFIXES.keys())
-            available_str = ", ".join([f"{net}:{st}" for net, st in available_combinations])
-            logger.error(f"No IP prefix configured for {vrf}/{site}. Available: {available_str}")
-            raise HTTPException(
-                status_code=400,
-                detail=f"No IP prefix configured for network '{vrf}' at site '{site}'. "
-                       f"Please add to NETWORK_SITE_PREFIXES: '{vrf}:{site}:<prefix>'"
-            )
+
+            # Filter to show relevant combinations
+            same_network = [f"{n}:{s}" for n, s in available_combinations if n == vrf]
+            same_site = [f"{n}:{s}" for n, s in available_combinations if s == site]
+
+            error_detail = f"Network '{vrf}' at site '{site}' is not configured. "
+
+            if same_network:
+                error_detail += f"\n• Network '{vrf}' is available at sites: {', '.join([s for n, s in available_combinations if n == vrf])}"
+            else:
+                error_detail += f"\n• Network '{vrf}' is not configured at any site"
+
+            if same_site:
+                error_detail += f"\n• Site '{site}' is available in networks: {', '.join([n for n, s in available_combinations if s == site])}"
+            else:
+                error_detail += f"\n• Site '{site}' is not configured in any network"
+
+            error_detail += f"\n• To enable this combination, add: NETWORK_SITE_PREFIXES='{vrf}:{site}:<prefix>'"
+
+            logger.error(f"No IP prefix configured for {vrf}/{site}")
+            raise HTTPException(status_code=400, detail=error_detail)
 
         try:
             # First validate that the segment includes explicit subnet mask
