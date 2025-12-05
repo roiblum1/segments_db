@@ -9,7 +9,7 @@ import ipaddress
 from typing import List, Dict, Any
 from fastapi import HTTPException
 
-from ...config.settings import get_site_prefix
+from ...config.settings import get_site_prefix, NETWORK_SITE_IP_PREFIXES
 
 logger = logging.getLogger(__name__)
 
@@ -18,10 +18,30 @@ class NetworkValidators:
     """Validators for network and IP-related fields"""
 
     @staticmethod
-    def validate_segment_format(segment: str, site: str) -> None:
-        """Validate that segment IP matches site prefix and is proper network format"""
-        logger.debug(f"Validating segment format: '{segment}' for site: {site}")
-        expected_prefix = get_site_prefix(site)
+    def validate_segment_format(segment: str, site: str, vrf: str = None) -> None:
+        """Validate that segment IP matches network+site prefix and is proper network format
+
+        Args:
+            segment: IP network in CIDR format (e.g., "192.168.1.0/24")
+            site: Site name (e.g., "Site1")
+            vrf: VRF/Network name (e.g., "Network1"). Used to determine correct IP prefix for the site.
+
+        Raises:
+            HTTPException: If segment format is invalid or doesn't match expected prefix
+        """
+        logger.debug(f"Validating segment format: '{segment}' for {vrf}/{site}")
+        expected_prefix = get_site_prefix(site, vrf)
+
+        # Validate that prefix mapping exists for this network+site combination
+        if expected_prefix is None:
+            available_combinations = list(NETWORK_SITE_IP_PREFIXES.keys())
+            available_str = ", ".join([f"{net}:{st}" for net, st in available_combinations])
+            logger.error(f"No IP prefix configured for {vrf}/{site}. Available: {available_str}")
+            raise HTTPException(
+                status_code=400,
+                detail=f"No IP prefix configured for network '{vrf}' at site '{site}'. "
+                       f"Please add to NETWORK_SITE_PREFIXES: '{vrf}:{site}:<prefix>'"
+            )
 
         try:
             # First validate that the segment includes explicit subnet mask
@@ -48,10 +68,11 @@ class NetworkValidators:
             first_octet = str(network.network_address).split('.')[0]
 
             if first_octet != expected_prefix:
-                logger.warning(f"IP prefix mismatch for site '{site}': expected '{expected_prefix}', got '{first_octet}'")
+                logger.warning(f"IP prefix mismatch for {vrf}/{site}: expected '{expected_prefix}', got '{first_octet}'")
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Invalid IP prefix for site '{site}'. Expected to start with '{expected_prefix}', got '{first_octet}'"
+                    detail=f"Invalid IP prefix for network '{vrf}' at site '{site}'. "
+                           f"Expected to start with '{expected_prefix}', got '{first_octet}'"
                 )
 
         except ipaddress.AddressValueError:

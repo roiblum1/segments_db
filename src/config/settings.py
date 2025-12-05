@@ -34,45 +34,116 @@ if not NETBOX_TOKEN:
 SITES = os.getenv("SITES", "site1,site2,site3").split(",")
 SITES = [s.strip() for s in SITES if s.strip()]
 
-# Site IP Prefix Configuration
+# Network + Site IP Prefix Configuration
+# New format: "Network1:Site1:192,Network1:Site2:193,Network2:Site1:912,Network2:Site2:913"
+# This allows different networks to use different IP prefixes for the same site
+NETWORK_SITE_PREFIXES_ENV = os.getenv("NETWORK_SITE_PREFIXES", "")
+
+# Legacy format for backward compatibility (deprecated)
 # Format: "site1:192,site2:193,site3:194"
-SITE_PREFIXES_ENV = os.getenv("SITE_PREFIXES", "site1:192,site2:193,site3:194")
+SITE_PREFIXES_ENV = os.getenv("SITE_PREFIXES", "")
+
+def parse_network_site_prefixes(network_site_prefixes_str: str) -> dict:
+    """Parse network+site prefixes from environment variable
+
+    Format: "Network1:Site1:192,Network1:Site2:193,Network2:Site1:912"
+    Returns: {("Network1", "Site1"): "192", ("Network1", "Site2"): "193", ...}
+    """
+    prefixes = {}
+    if not network_site_prefixes_str:
+        return prefixes
+
+    for triple in network_site_prefixes_str.split(","):
+        parts = triple.strip().split(":")
+        if len(parts) == 3:
+            network, site, prefix = parts
+            prefixes[(network.strip(), site.strip())] = prefix.strip()
+        elif len(parts) == 2:
+            # Legacy format: site:prefix (assume default network context)
+            site, prefix = parts
+            prefixes[("default", site.strip())] = prefix.strip()
+    return prefixes
 
 def parse_site_prefixes(site_prefixes_str: str) -> dict:
-    """Parse site prefixes from environment variable"""
+    """Parse site prefixes from environment variable (LEGACY - for backward compatibility)
+
+    Format: "site1:192,site2:193,site3:194"
+    Returns: {"site1": "192", "site2": "193", ...}
+    """
     prefixes = {}
+    if not site_prefixes_str:
+        return prefixes
+
     for pair in site_prefixes_str.split(","):
         if ":" in pair:
             site, prefix = pair.strip().split(":", 1)
             prefixes[site.strip()] = prefix.strip()
     return prefixes
 
-SITE_IP_PREFIXES = parse_site_prefixes(SITE_PREFIXES_ENV)
+# Parse new format first, fallback to legacy format
+NETWORK_SITE_IP_PREFIXES = parse_network_site_prefixes(NETWORK_SITE_PREFIXES_ENV)
+SITE_IP_PREFIXES_LEGACY = parse_site_prefixes(SITE_PREFIXES_ENV)
+
+# If using legacy format, convert to new format with default network
+if not NETWORK_SITE_IP_PREFIXES and SITE_IP_PREFIXES_LEGACY:
+    NETWORK_SITE_IP_PREFIXES = {("default", site): prefix for site, prefix in SITE_IP_PREFIXES_LEGACY.items()}
 
 def validate_site_prefixes():
-    """Validate that all configured sites have IP prefixes defined"""
-    missing_prefixes = []
-    
-    for site in SITES:
-        if site not in SITE_IP_PREFIXES:
-            missing_prefixes.append(site)
-    
-    if missing_prefixes:
+    """Validate that all configured sites have IP prefixes defined
+
+    For new multi-network format, this checks that configuration is not empty.
+    Individual network+site combinations are validated at segment creation time.
+    """
+    if not NETWORK_SITE_IP_PREFIXES:
         error_msg = (
-            f"CRITICAL CONFIGURATION ERROR: Sites {missing_prefixes} are missing IP prefixes!\n"
+            f"CRITICAL CONFIGURATION ERROR: No network+site IP prefixes configured!\n"
             f"Configured sites: {SITES}\n"
-            f"Available prefixes: {list(SITE_IP_PREFIXES.keys())}\n"
-            f"Please add missing prefixes to SITE_PREFIXES environment variable.\n"
-            f"Example: SITE_PREFIXES=\"site1:192,site2:193,site3:194\""
+            f"Please set NETWORK_SITE_PREFIXES environment variable.\n"
+            f"New format: NETWORK_SITE_PREFIXES=\"Network1:Site1:192,Network1:Site2:193,Network2:Site1:912\"\n"
+            f"Legacy format: SITE_PREFIXES=\"Site1:192,Site2:193,Site3:194\" (uses 'default' network)"
         )
-        
+
         # Log error and crash the application
         print(f"ERROR: {error_msg}", file=sys.stderr)
         raise ValueError(error_msg)
 
-def get_site_prefix(site: str) -> str:
-    """Get the IP prefix for a given site"""
-    return SITE_IP_PREFIXES.get(site, "192")
+    # Log what networks and sites are configured
+    configured_combinations = list(NETWORK_SITE_IP_PREFIXES.keys())
+    networks = set(network for network, site in configured_combinations)
+    sites_with_prefixes = set(site for network, site in configured_combinations)
+
+    print(f"INFO: Configured networks: {sorted(networks)}", file=sys.stderr)
+    print(f"INFO: Sites with network prefixes: {sorted(sites_with_prefixes)}", file=sys.stderr)
+    print(f"INFO: Total network+site combinations: {len(configured_combinations)}", file=sys.stderr)
+
+def get_site_prefix(site: str, vrf: str = None) -> str:
+    """Get the IP prefix for a given site and network/VRF
+
+    Args:
+        site: Site name (e.g., "Site1")
+        vrf: VRF/Network name (e.g., "Network1"). If None, tries "default" network
+
+    Returns:
+        IP prefix (e.g., "192") or None if not found
+    """
+    # Try with specified VRF first
+    if vrf:
+        prefix = NETWORK_SITE_IP_PREFIXES.get((vrf, site))
+        if prefix:
+            return prefix
+
+    # Fall back to "default" network (for legacy compatibility)
+    prefix = NETWORK_SITE_IP_PREFIXES.get(("default", site))
+    if prefix:
+        return prefix
+
+    # Return None if not found (validation will catch this)
+    return None
+
+def get_all_networks() -> list:
+    """Get list of all configured networks/VRFs"""
+    networks = set(network for network, site in NETWORK_SITE_IP_PREFIXES.keys())
+    return sorted(networks)
 
 # Logging Configuration
 def setup_logging():

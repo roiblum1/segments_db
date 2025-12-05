@@ -26,37 +26,52 @@ class OrganizationValidators:
     @staticmethod
     def validate_vlan_name_uniqueness(
         site: str,
+        vrf: str,
         epg_name: str,
         vlan_id: int,
         existing_segments: List[Dict[str, Any]],
         exclude_id: Optional[str] = None
     ) -> None:
         """
-        Validate that EPG name + VLAN ID combination is unique per site
+        Validate that EPG name + VLAN ID combination is unique per (network, site)
+
+        IMPORTANT: In multi-network environments, the same VLAN ID can exist in:
+        - Different networks (VRFs) at the same site  ✓ ALLOWED
+        - Different sites in the same network           ✓ ALLOWED
+        - Same network and same site                    ✗ NOT ALLOWED
 
         This prevents confusing situations where same EPG name has different VLAN IDs
-        or same VLAN ID has different EPG names at the same site
+        or same VLAN ID has different EPG names within the same (network, site) scope.
+
+        Args:
+            site: Site name (e.g., "Site1")
+            vrf: VRF/Network name (e.g., "Network1")
+            epg_name: EPG name (network endpoint group identifier)
+            vlan_id: VLAN ID (1-4094)
+            existing_segments: List of existing segments to check against
+            exclude_id: Segment ID to exclude from check (for updates)
         """
         for segment in existing_segments:
             # Skip if this is the segment being updated
             if exclude_id and str(segment.get("_id")) == str(exclude_id):
                 continue
 
-            # Check same site only
-            if segment.get("site") != site:
+            # Check same (network, site) combination only
+            # Different network = different scope (isolation)
+            if segment.get("site") != site or segment.get("vrf") != vrf:
                 continue
 
-            # Check if EPG name is same but VLAN ID is different
+            # Check if EPG name is same but VLAN ID is different within this (network, site)
             if (segment.get("epg_name") == epg_name and
                 segment.get("vlan_id") != vlan_id):
-                logger.warning(f"EPG name conflict: '{epg_name}' already used with VLAN {segment.get('vlan_id')} at {site}")
+                logger.warning(f"EPG name conflict in {vrf}/{site}: '{epg_name}' already used with VLAN {segment.get('vlan_id')}")
                 raise HTTPException(
                     status_code=400,
-                    detail=f"EPG name '{epg_name}' is already used with VLAN {segment.get('vlan_id')} at site {site}. "
-                           f"Cannot assign it to VLAN {vlan_id}."
+                    detail=f"EPG name '{epg_name}' is already used with VLAN {segment.get('vlan_id')} "
+                           f"in network '{vrf}' at site '{site}'. Cannot assign it to VLAN {vlan_id}."
                 )
 
-        logger.debug(f"EPG name uniqueness validation passed for {epg_name} at {site}")
+        logger.debug(f"EPG name uniqueness validation passed for {epg_name} in {vrf}/{site}")
 
     @staticmethod
     def validate_concurrent_modification(original_updated_at: Any, current_updated_at: Any) -> None:

@@ -21,8 +21,8 @@ class SegmentService:
         Validators.validate_epg_name(segment.epg_name)
         Validators.validate_vlan_id(segment.vlan_id)
 
-        # Network validation
-        Validators.validate_segment_format(segment.segment, segment.site)
+        # Network validation (with network-specific site prefix)
+        Validators.validate_segment_format(segment.segment, segment.site, segment.vrf)
         Validators.validate_subnet_mask(segment.segment)
         Validators.validate_no_reserved_ips(segment.segment)
         Validators.validate_network_broadcast_gateway(segment.segment)
@@ -43,9 +43,10 @@ class SegmentService:
 
         Validators.validate_ip_overlap(segment.segment, existing_segments)
 
-        # EPG name uniqueness validation
+        # EPG name uniqueness validation (scoped to network+site)
         Validators.validate_vlan_name_uniqueness(
             site=segment.site,
+            vrf=segment.vrf,
             epg_name=segment.epg_name,
             vlan_id=segment.vlan_id,
             existing_segments=existing_segments,
