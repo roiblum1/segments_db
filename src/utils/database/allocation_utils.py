@@ -18,30 +18,48 @@ class AllocationUtils:
     """Utilities for segment allocation operations"""
 
     @staticmethod
-    async def find_existing_allocation(cluster_name: str, site: str) -> Optional[Dict[str, Any]]:
-        """Find existing allocation for a cluster at a site
+    async def find_existing_allocation(cluster_name: str, site: str, vrf: str = None) -> Optional[Dict[str, Any]]:
+        """Find existing allocation for a cluster at a site and VRF
         Supports both single clusters and shared segments (comma-separated)
+        
+        Args:
+            cluster_name: Name of the cluster
+            site: Site name
+            vrf: VRF/Network name (optional, but recommended for correct matching)
 
         Uses optimized NetBox API filtering to reduce data transfer
         """
         storage = get_storage()
 
-        # Use optimized find for exact match first
-        exact_match = await storage.find_one_optimized({
+        # Build query filter - VRF is important to ensure correct network matching
+        query_filter = {
             "cluster_name": cluster_name,
             "site": site,
             "released": False
-        })
+        }
+        
+        # Add VRF filter if provided
+        if vrf:
+            query_filter["vrf"] = vrf
+
+        # Use optimized find for exact match first
+        exact_match = await storage.find_one_optimized(query_filter)
         if exact_match:
             return exact_match
 
         # For regex search (shared segments), we still need find_one
         # but this is rare, so less impact
-        shared_match = await storage.find_one({
+        shared_query_filter = {
             "cluster_name": {"$regex": f"(^|,){cluster_name}(,|$)"},
             "site": site,
             "released": False
-        })
+        }
+        
+        # Add VRF filter if provided
+        if vrf:
+            shared_query_filter["vrf"] = vrf
+            
+        shared_match = await storage.find_one(shared_query_filter)
         return shared_match
 
     @staticmethod
@@ -119,18 +137,30 @@ class AllocationUtils:
         return result > 0
 
     @staticmethod
-    async def release_segment(cluster_name: str, site: str) -> bool:
+    async def release_segment(cluster_name: str, site: str, vrf: str = None) -> bool:
         """Release a segment allocation
         For shared segments, removes only the specified cluster from the list
+        
+        Args:
+            cluster_name: Name of the cluster to release
+            site: Site name
+            vrf: VRF/Network name (optional, but recommended for correct matching)
         """
         storage = get_storage()
 
-        # First find the segment to check if it's shared
-        segment = await storage.find_one({
+        # Build query filter - VRF is important to ensure correct network matching
+        query_filter = {
             "cluster_name": {"$regex": f"(^|,){cluster_name}(,|$)"},
             "site": site,
             "released": False
-        })
+        }
+        
+        # Add VRF filter if provided
+        if vrf:
+            query_filter["vrf"] = vrf
+
+        # First find the segment to check if it's shared
+        segment = await storage.find_one(query_filter)
 
         if not segment:
             return False

@@ -30,9 +30,10 @@ class AllocationService:
         Validators.validate_cluster_name(request.cluster_name)
         await Validators.validate_vrf(request.vrf)
 
-        # Check if cluster already has an allocation at this site
+        # Check if cluster already has an allocation at this site and VRF
+        # IMPORTANT: Must check VRF to prevent returning wrong network allocation
         existing = await DatabaseUtils.find_existing_allocation(
-            request.cluster_name, request.site
+            request.cluster_name, request.site, request.vrf
         )
 
         if existing:
@@ -74,11 +75,20 @@ class AllocationService:
     @handle_netbox_errors
     @retry_on_network_error(max_retries=3)
     @log_operation_timing("release_vlan", threshold_ms=2000)
-    async def release_vlan(cluster_name: str, site: str) -> Dict[str, str]:
-        """Release a VLAN segment allocation"""
-        logger.info(f"Release request: cluster={cluster_name}, site={site}")
+    async def release_vlan(cluster_name: str, site: str, vrf: str) -> Dict[str, str]:
+        """Release a VLAN segment allocation
+        
+        Args:
+            cluster_name: Name of the cluster to release
+            site: Site name
+            vrf: VRF/Network name (required to ensure correct network matching)
+        """
+        logger.info(f"Release request: cluster={cluster_name}, site={site}, vrf={vrf}")
 
-        success = await DatabaseUtils.release_segment(cluster_name, site)
+        # Validate VRF
+        await Validators.validate_vrf(vrf)
+
+        success = await DatabaseUtils.release_segment(cluster_name, site, vrf)
 
         if not success:
             raise HTTPException(status_code=404, detail="Allocation not found")

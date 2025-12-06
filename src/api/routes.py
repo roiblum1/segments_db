@@ -23,7 +23,7 @@ async def allocate_vlan(request: VLANAllocationRequest):
 @router.post("/release-vlan")
 async def release_vlan(request: VLANRelease):
     """Release a VLAN segment allocation"""
-    return await AllocationService.release_vlan(request.cluster_name, request.site)
+    return await AllocationService.release_vlan(request.cluster_name, request.site, request.vrf)
 
 # Segment Management Routes
 @router.get("/segments")

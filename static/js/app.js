@@ -374,9 +374,10 @@ async function loadSegments() {
                         </button>
                         ${isAllocated ? `
                             <button class="release"
-                                    onclick="releaseSegment('${segment.cluster_name}', '${segment.site}')"
+                                    onclick="releaseSegment('${segment.cluster_name}', '${segment.site}', '${segment.vrf || ''}')"
                                     data-cluster="${segment.cluster_name}"
-                                    data-site="${segment.site}">
+                                    data-site="${segment.site}"
+                                    data-vrf="${segment.vrf || ''}">
                                 Release
                             </button>
                         ` : `
@@ -414,23 +415,23 @@ async function deleteSegment(segmentId) {
     }
 }
 
-async function releaseSegment(clusterName, site) {
-    if (!confirm(`Release segment for ${clusterName}?`)) return;
+async function releaseSegment(clusterName, site, vrf) {
+    if (!confirm(`Release segment for ${clusterName} in ${vrf}?`)) return;
     
     try {
-        const button = document.querySelector(`button[data-cluster="${clusterName}"][data-site="${site}"]`);
+        const button = document.querySelector(`button[data-cluster="${clusterName}"][data-site="${site}"][data-vrf="${vrf}"]`);
         if (button) button.disabled = true;
         
         await fetchAPI('/release-vlan', {
             method: 'POST',
-            body: JSON.stringify({ cluster_name: clusterName, site: site })
+            body: JSON.stringify({ cluster_name: clusterName, site: site, vrf: vrf })
         });
         
-        showSuccess(`Segment released for ${clusterName}`);
+        showSuccess(`Segment released for ${clusterName} in ${vrf}`);
         await Promise.all([loadSegments(), loadStats()]);
     } catch (error) {
         showError(`Failed to release segment: ${error.message}`);
-        const button = document.querySelector(`button[data-cluster="${clusterName}"][data-site="${site}"]`);
+        const button = document.querySelector(`button[data-cluster="${clusterName}"][data-site="${site}"][data-vrf="${vrf}"]`);
         if (button) button.disabled = false;
     }
 }

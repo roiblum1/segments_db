@@ -76,13 +76,15 @@ class VLANAllocationResponse(BaseModel):
 class VLANRelease(BaseModel):
     cluster_name: str = Field(..., description="Name of the cluster to release", examples=["cluster-prod-01"])
     site: str = Field(..., description="Site where cluster is allocated", examples=["site1"])
+    vrf: str = Field(..., description="VRF/Network to release from", examples=["Network1"])
 
     model_config = {
         "json_schema_extra": {
             "examples": [
                 {
                     "cluster_name": "cluster-prod-01",
-                    "site": "site1"
+                    "site": "site1",
+                    "vrf": "Network1"
                 }
             ]
         }
