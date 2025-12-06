@@ -46,34 +46,47 @@ class NetBoxHelpers:
         """Initialize with NetBox client"""
         self.nb = nb_client
 
-    async def get_or_create_site(self, site_slug: str):
-        """Get or create a site group in NetBox (not regular site)"""
+    async def get_site(self, site_slug: str):
+        """Get site group from NetBox (must already exist - no creation)
+
+        Production tokens typically don't have permission to create site groups.
+        Site groups must be pre-configured in NetBox by administrators.
+
+        Args:
+            site_slug: Site group slug to look up
+
+        Returns:
+            Site group object from NetBox
+
+        Raises:
+            HTTPException: If site group doesn't exist
+        """
         try:
-            # Try to get existing site group
+            # Get existing site group (NO creation)
             site_group = await run_netbox_get(
                 lambda: self.nb.dcim.site_groups.get(slug=site_slug),
                 f"get site group {site_slug}"
             )
 
-            if site_group:
-                logger.debug(f"Found existing site group: {site_slug}")
-                return site_group
+            if not site_group:
+                logger.error(f"Site group '{site_slug}' not found in NetBox")
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Site group '{site_slug}' does not exist in NetBox. "
+                           f"Please create it in NetBox first or contact your administrator."
+                )
 
-            # Create new site group
-            logger.info(f"Creating new site group in NetBox: {site_slug}")
-            site_group = await run_netbox_write(
-                lambda: self.nb.dcim.site_groups.create(
-                    name=site_slug.upper(),
-                    slug=site_slug
-                ),
-                f"create site group {site_slug}"
-            )
-            logger.info(f"Created site group in NetBox: {site_slug}")
+            logger.debug(f"Found site group: {site_slug} (ID: {site_group.id})")
             return site_group
 
-        except Exception as e:
-            logger.error(f"Error getting/creating site group '{site_slug}': {e}", exc_info=True)
+        except HTTPException:
             raise
+        except Exception as e:
+            logger.error(f"Error getting site group '{site_slug}': {e}", exc_info=True)
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error fetching site group from NetBox: {str(e)}"
+            )
 
     async def cleanup_unused_vlan(self, vlan_obj):
         """
@@ -152,7 +165,7 @@ class NetBoxHelpers:
             }
 
             # OPTIMIZATION: Parallelize independent lookups (4x faster)
-            site_task = self.get_or_create_site(site_slug) if site_slug else asyncio.sleep(0)
+            site_task = self.get_site(site_slug) if site_slug else asyncio.sleep(0)
             tenant_task = self.get_tenant("RedBull")
             role_task = self.get_role("Data", "vlan")
 

@@ -50,7 +50,7 @@ class NetBoxCRUDOps:
             # OPTIMIZATION: Fetch all reference data AND VLAN in parallel using asyncio.gather()
             # This reduces serial API calls from ~200ms total to ~50ms (5x faster)
             vrf_task = self.helpers.get_vrf(document["vrf"]) if document.get("vrf") else asyncio.sleep(0)
-            site_task = self.helpers.get_or_create_site(document["site"]) if document.get("site") else asyncio.sleep(0)
+            site_task = self.helpers.get_site(document["site"]) if document.get("site") else asyncio.sleep(0)
             tenant_task = self.helpers.get_tenant("RedBull")
             role_task = self.helpers.get_role("Data", "prefix")
 
