@@ -17,17 +17,17 @@ logger = logging.getLogger(__name__)
 # Optimized caching to reduce NetBox API calls while keeping data reasonably fresh
 # Now supports dynamic cache keys (e.g., site_group_{id}) with automatic TTL assignment
 _cache: Dict[str, Dict[str, Any]] = {
-    "prefixes": {"data": None, "timestamp": 0, "ttl": 300},  # 5 minutes
-    "vlans": {"data": None, "timestamp": 0, "ttl": 300},  # 5 minutes
-    "redbull_tenant_id": {"data": None, "timestamp": 0, "ttl": 300},  # 5 minutes
-    "vrfs": {"data": None, "timestamp": 0, "ttl": 300},  # 5 minutes
-    "site_groups": {"data": None, "timestamp": 0, "ttl": 300},  # 5 minutes
-    "roles": {"data": None, "timestamp": 0, "ttl": 300},  # 5 minutes
-    "tenants": {"data": None, "timestamp": 0, "ttl": 300},  # 5 minutes
+    "prefixes": {"data": None, "timestamp": 0, "ttl": 600},  # 10 minutes (matches CLAUDE.md spec)
+    "vlans": {"data": None, "timestamp": 0, "ttl": 600},  # 10 minutes
+    "redbull_tenant_id": {"data": None, "timestamp": 0, "ttl": 3600},  # 1 hour (rarely changes)
+    "vrfs": {"data": None, "timestamp": 0, "ttl": 3600},  # 1 hour (rarely changes)
+    "site_groups": {"data": None, "timestamp": 0, "ttl": 3600},  # 1 hour (rarely changes)
+    "roles": {"data": None, "timestamp": 0, "ttl": 3600},  # 1 hour (rarely changes)
+    "tenants": {"data": None, "timestamp": 0, "ttl": 3600},  # 1 hour (rarely changes)
 }
 
 # Default TTL for dynamic cache keys (e.g., site_group_123, role_data_prefix)
-_default_ttl = 300  # 5 minutes
+_default_ttl = 600  # 10 minutes
 
 # In-flight request tracking to prevent duplicate concurrent fetches
 _inflight_requests: Dict[str, asyncio.Task] = {}

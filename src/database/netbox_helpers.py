@@ -152,64 +152,33 @@ class NetBoxHelpers:
             }
 
             # OPTIMIZATION: Parallelize independent lookups (4x faster)
-            # Fetch site, tenant, role, and VLAN group concurrently
-            tasks = []
-            task_names = []
+            site_task = self.get_or_create_site(site_slug) if site_slug else asyncio.sleep(0)
+            tenant_task = self.get_tenant("RedBull")
+            role_task = self.get_role("Data", "vlan")
 
-            # Task 1: Site group (if needed)
-            if site_slug:
-                tasks.append(self.get_or_create_site(site_slug))
-                task_names.append("site")
-            else:
-                tasks.append(asyncio.sleep(0))
-                task_names.append("site")
-
-            # Task 2: Tenant
-            tasks.append(self.get_tenant("RedBull"))
-            task_names.append("tenant")
-
-            # Task 3: Role
-            tasks.append(self.get_role("Data", "vlan"))
-            task_names.append("role")
-
-            # Task 4: VLAN group (if needed)
+            vlan_group_task = asyncio.sleep(0)
             if vrf_name and site_slug:
                 site_group = site_slug.capitalize()
-                tasks.append(self.get_or_create_vlan_group(vrf_name, site_group))
-                task_names.append("vlan_group")
-            else:
-                tasks.append(asyncio.sleep(0))
-                task_names.append("vlan_group")
+                vlan_group_task = self.get_or_create_vlan_group(vrf_name, site_group)
 
             # Execute all tasks in parallel
             import time
             t_start = time.time()
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            elapsed = (time.time() - t_start) * 1000
-            logger.debug(f"⏱️  Parallel VLAN reference lookup took {elapsed:.0f}ms")
+            site_obj, tenant, role, vlan_group = await asyncio.gather(
+                site_task, tenant_task, role_task, vlan_group_task, return_exceptions=True
+            )
+            logger.debug(f"⏱️  Parallel VLAN reference lookup took {(time.time() - t_start)*1000:.0f}ms")
 
-            # Unpack results
-            site_obj = results[0] if not isinstance(results[0], Exception) and task_names[0] == "site" else None
-            tenant = results[1] if not isinstance(results[1], Exception) and task_names[1] == "tenant" else None
-            role = results[2] if not isinstance(results[2], Exception) and task_names[2] == "role" else None
-            vlan_group = results[3] if not isinstance(results[3], Exception) and task_names[3] == "vlan_group" else None
-
-            # Add tenant "RedBull"
-            if tenant:
+            # Add associations (check for exceptions from parallel gather)
+            if tenant and not isinstance(tenant, Exception):
                 vlan_data["tenant"] = tenant.id
-                logger.debug(f"Assigned tenant 'RedBull' to VLAN")
-
-            # Add role "Data"
-            if role:
+            if role and not isinstance(role, Exception):
                 vlan_data["role"] = role.id
-                logger.debug(f"Assigned role 'Data' to VLAN")
-
-            # Add VLAN Group if successfully fetched
             if vlan_group and not isinstance(vlan_group, Exception):
                 vlan_data["group"] = vlan_group.id
                 logger.debug(f"Assigned VLAN group '{vlan_group.name}' to VLAN")
             elif vrf_name and site_slug:
-                logger.warning(f"Failed to get/create VLAN group for VRF '{vrf_name}' - VLAN will be created without group")
+                logger.warning(f"Failed to get/create VLAN group - VLAN will be created without group")
 
             # Create new VLAN
             vlan = await run_netbox_write(
