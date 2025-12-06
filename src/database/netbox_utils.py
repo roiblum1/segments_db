@@ -1,121 +1,145 @@
 """
 NetBox Utility Functions
 
-This module provides common utility functions to reduce code duplication
-across NetBox-related modules.
+Common utilities for safe attribute access, custom fields handling, and validation.
 """
 
-import logging
-import asyncio
-import time
-from typing import Callable, Any, Tuple
-from functools import wraps
-
-from .netbox_client import get_netbox_read_executor, get_netbox_write_executor, get_netbox_executor
-
-logger = logging.getLogger(__name__)
+from typing import Any, Optional, Dict
+from datetime import datetime, timezone
 
 
-def get_executor_setup(executor_type: str = "default") -> Tuple[asyncio.AbstractEventLoop, Any]:
-    """
-    Get event loop and executor setup (reduces code duplication)
+def safe_get_attr(obj: Any, attr: str, default: Any = None) -> Any:
+    """Safely get attribute from object, return default if not found"""
+    return getattr(obj, attr, default) if obj else default
+
+
+def safe_get_id(obj: Any) -> Optional[int]:
+    """Safely extract ID from NetBox object"""
+    if not obj:
+        return None
+    if hasattr(obj, 'id'):
+        return obj.id
+    if isinstance(obj, int):
+        return obj
+    return None
+
+
+def ensure_custom_fields(obj: Any) -> Dict[str, Any]:
+    """Ensure custom_fields dict exists on object"""
+    if not hasattr(obj, 'custom_fields') or obj.custom_fields is None:
+        obj.custom_fields = {}
+    return obj.custom_fields
+
+
+def get_custom_field(obj: Any, field_name: str, default: Any = None) -> Any:
+    """Get custom field value safely"""
+    custom_fields = getattr(obj, 'custom_fields', {}) or {}
+    return custom_fields.get(field_name, default)
+
+
+def set_custom_field(obj: Any, field_name: str, value: Any) -> None:
+    """Set custom field value safely"""
+    ensure_custom_fields(obj)
+    obj.custom_fields[field_name] = value
+
+
+def get_site_slug_from_prefix(prefix: Any) -> Optional[str]:
+    """Extract site slug from prefix scope (Site Group)"""
+    if not hasattr(prefix, 'scope_type') or not prefix.scope_type:
+        return None
     
-    Args:
-        executor_type: "read", "write", or "default"
-        
-    Returns:
-        Tuple of (loop, executor)
-    """
-    loop = asyncio.get_event_loop()
+    if 'sitegroup' not in str(prefix.scope_type).lower():
+        return None
     
-    if executor_type == "read":
-        executor = get_netbox_read_executor()
-    elif executor_type == "write":
-        executor = get_netbox_write_executor()
+    if not hasattr(prefix, 'scope_id') or not prefix.scope_id:
+        return None
+    
+    # Try to get from cached site group
+    from .netbox_cache import get_cached
+    cache_key = f"site_group_{prefix.scope_id}"
+    site_group = get_cached(cache_key)
+    
+    if site_group:
+        if hasattr(site_group, 'slug'):
+            return site_group.slug
+        if isinstance(site_group, dict) and 'slug' in site_group:
+            return site_group['slug']
+    
+    # Fallback to prefix.scope if available
+    if hasattr(prefix, 'scope') and hasattr(prefix.scope, 'slug'):
+        return prefix.scope.slug
+    
+    return None
+
+
+def get_vlan_info(vlan_obj: Any) -> tuple[Optional[int], str]:
+    """Extract VLAN ID and name from VLAN object"""
+    if not vlan_obj:
+        return None, ""
+    
+    vlan_id = safe_get_attr(vlan_obj, 'vid')
+    vlan_name = safe_get_attr(vlan_obj, 'name', "")
+    return vlan_id, vlan_name
+
+
+def prefix_to_segment(prefix, nb_client) -> Dict[str, Any]:
+    """Convert NetBox prefix object to our segment format"""
+    from .netbox_constants import (
+        CUSTOM_FIELD_CLUSTER, CUSTOM_FIELD_DHCP, STATUS_ACTIVE, STATUS_RESERVED,
+        DESCRIPTION_CLUSTER_PREFIX
+    )
+    
+    # Extract VLAN info
+    vlan_obj = safe_get_attr(prefix, 'vlan')
+    vlan_id, epg_name = get_vlan_info(vlan_obj) if vlan_obj else (None, "")
+
+    # Extract site from Prefix scope (Site Group)
+    site_slug = get_site_slug_from_prefix(prefix)
+
+    # Extract metadata
+    status_val = safe_get_attr(prefix.status, 'value') or str(prefix.status).lower()
+    user_comments = safe_get_attr(prefix, 'comments', "") or ""
+
+    # Extract cluster name from custom field
+    cluster_name = get_custom_field(prefix, CUSTOM_FIELD_CLUSTER)
+    if not cluster_name and status_val == STATUS_RESERVED:
+        description = safe_get_attr(prefix, 'description', '')
+        if description.startswith(DESCRIPTION_CLUSTER_PREFIX):
+            cluster_name = description.replace(DESCRIPTION_CLUSTER_PREFIX, '').strip()
+
+    # Determine released status:
+    # - status="active" + cluster_name=None → released=False (never allocated, available)
+    # - status="reserved" + cluster_name=None → released=True (previously allocated, now released)
+    # - status="reserved" + cluster_name!=None → released=False (currently allocated)
+    if status_val == STATUS_ACTIVE:
+        released = False  # Never allocated
+    elif status_val == STATUS_RESERVED:
+        released = (cluster_name is None)  # Released if no cluster assigned
     else:
-        executor = get_netbox_executor()
-    
-    return loop, executor
+        released = False  # Default to not released
 
+    # Extract VRF
+    vrf_obj = safe_get_attr(prefix, 'vrf')
+    vrf_name = safe_get_attr(vrf_obj, 'name') if vrf_obj else None
 
-def log_netbox_timing(elapsed_ms: float, operation_name: str) -> None:
-    """
-    Log NetBox operation timing with consistent thresholds
-    
-    Args:
-        elapsed_ms: Elapsed time in milliseconds
-        operation_name: Name of the operation for logging
-    """
-    if elapsed_ms > 20000:
-        logger.error(f"🚨 NETBOX SEVERE THROTTLING: {operation_name} took {elapsed_ms:.0f}ms ({elapsed_ms/1000:.1f}s)")
-    elif elapsed_ms > 5000:
-        logger.warning(f"⚠️  NETBOX THROTTLED: {operation_name} took {elapsed_ms:.0f}ms ({elapsed_ms/1000:.1f}s)")
-    elif elapsed_ms > 2000:
-        logger.info(f"⏱️  NETBOX SLOW: {operation_name} took {elapsed_ms:.0f}ms")
-    else:
-        logger.debug(f"⏱️  NETBOX OK: {operation_name} took {elapsed_ms:.0f}ms")
+    # Extract DHCP from custom field
+    dhcp = bool(get_custom_field(prefix, CUSTOM_FIELD_DHCP, False))
 
+    # Timestamps
+    allocated_at = datetime.now(timezone.utc) if (status_val == STATUS_RESERVED and cluster_name) else None
 
-async def run_netbox_operation(
-    operation: Callable,
-    operation_name: str,
-    executor_type: str = "default"
-) -> Any:
-    """
-    Run a NetBox operation with timing and error handling
-    
-    Args:
-        operation: Callable that performs the NetBox operation
-        operation_name: Name for logging
-        executor_type: "read", "write", or "default"
-        
-    Returns:
-        Result of the operation
-    """
-    loop, executor = get_executor_setup(executor_type)
-    
-    start = time.time()
-    try:
-        result = await loop.run_in_executor(executor, operation)
-        elapsed = (time.time() - start) * 1000
-        log_netbox_timing(elapsed, operation_name)
-        return result
-    except Exception as e:
-        elapsed = (time.time() - start) * 1000
-        logger.error(f"NETBOX FAILED: {operation_name} failed after {elapsed:.0f}ms - {e}", exc_info=True)
-        raise
-
-
-async def run_netbox_get(
-    get_operation: Callable,
-    operation_name: str
-) -> Any:
-    """
-    Run a NetBox GET operation (read) with timing
-    
-    Args:
-        get_operation: Callable that performs the NetBox GET operation
-        operation_name: Name for logging
-        
-    Returns:
-        Result of the operation
-    """
-    return await run_netbox_operation(get_operation, operation_name, executor_type="read")
-
-
-async def run_netbox_write(
-    write_operation: Callable,
-    operation_name: str
-) -> Any:
-    """
-    Run a NetBox write operation (POST/PUT/DELETE) with timing
-    
-    Args:
-        write_operation: Callable that performs the NetBox write operation
-        operation_name: Name for logging
-        
-    Returns:
-        Result of the operation
-    """
-    return await run_netbox_operation(write_operation, operation_name, executor_type="write")
+    return {
+        "_id": str(prefix.id),
+        "site": site_slug,
+        "vlan_id": vlan_id,
+        "epg_name": epg_name,
+        "segment": str(prefix.prefix),
+        "vrf": vrf_name,
+        "dhcp": dhcp,
+        "description": user_comments,
+        "cluster_name": cluster_name,
+        "allocated_at": allocated_at,
+        "released": released,
+        "released_at": None,
+    }
 

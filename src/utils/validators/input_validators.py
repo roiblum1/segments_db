@@ -17,9 +17,12 @@ class InputValidators:
 
     @staticmethod
     def validate_site(site: str) -> None:
-        """Validate if site is in configured sites"""
+        """Validate if site is in configured sites (case-insensitive)"""
         logger.debug(f"Validating site: {site}")
-        if site not in SITES:
+        # Normalize to lowercase for comparison (NetBox slugs are lowercase)
+        site_lower = site.lower()
+        sites_lower = [s.lower() for s in SITES]
+        if site_lower not in sites_lower:
             logger.warning(f"Invalid site: {site}, valid sites: {SITES}")
             raise HTTPException(
                 status_code=400,

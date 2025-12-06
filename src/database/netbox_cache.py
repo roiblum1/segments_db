@@ -10,6 +10,7 @@ import logging
 import time
 from typing import Optional, Any, Dict
 import asyncio
+from .netbox_constants import CACHE_KEY_REDBULL_TENANT_ID, CACHE_KEY_PREFIXES, CACHE_KEY_VLANS, CACHE_KEY_VRFS
 
 logger = logging.getLogger(__name__)
 
@@ -17,10 +18,10 @@ logger = logging.getLogger(__name__)
 # Optimized caching to reduce NetBox API calls while keeping data reasonably fresh
 # Now supports dynamic cache keys (e.g., site_group_{id}) with automatic TTL assignment
 _cache: Dict[str, Dict[str, Any]] = {
-    "prefixes": {"data": None, "timestamp": 0, "ttl": 600},  # 10 minutes (matches CLAUDE.md spec)
-    "vlans": {"data": None, "timestamp": 0, "ttl": 600},  # 10 minutes
-    "redbull_tenant_id": {"data": None, "timestamp": 0, "ttl": 3600},  # 1 hour (rarely changes)
-    "vrfs": {"data": None, "timestamp": 0, "ttl": 3600},  # 1 hour (rarely changes)
+    CACHE_KEY_PREFIXES: {"data": None, "timestamp": 0, "ttl": 600},  # 10 minutes (matches CLAUDE.md spec)
+    CACHE_KEY_VLANS: {"data": None, "timestamp": 0, "ttl": 600},  # 10 minutes
+    CACHE_KEY_REDBULL_TENANT_ID: {"data": None, "timestamp": 0, "ttl": 3600},  # 1 hour (rarely changes)
+    CACHE_KEY_VRFS: {"data": None, "timestamp": 0, "ttl": 3600},  # 1 hour (rarely changes)
     "site_groups": {"data": None, "timestamp": 0, "ttl": 3600},  # 1 hour (rarely changes)
     "roles": {"data": None, "timestamp": 0, "ttl": 3600},  # 1 hour (rarely changes)
     "tenants": {"data": None, "timestamp": 0, "ttl": 3600},  # 1 hour (rarely changes)

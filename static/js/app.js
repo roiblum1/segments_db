@@ -794,7 +794,8 @@ async function loadSitesForEdit(selectedSite) {
             const option = document.createElement('option');
             option.value = site;
             option.textContent = site;
-            if (site === selectedSite) {
+            // Case-insensitive comparison to handle "site1" vs "Site1"
+            if (site.toLowerCase() === (selectedSite || '').toLowerCase()) {
                 option.selected = true;
             }
             select.appendChild(option);
@@ -814,7 +815,8 @@ async function loadVrfsForEdit(selectedVrf) {
             const option = document.createElement('option');
             option.value = vrf;
             option.textContent = vrf;
-            if (vrf === selectedVrf) {
+            // Case-insensitive comparison for consistency
+            if (vrf.toLowerCase() === (selectedVrf || '').toLowerCase()) {
                 option.selected = true;
             }
             select.appendChild(option);

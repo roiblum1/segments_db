@@ -78,6 +78,11 @@ def retry_on_network_error(max_retries: int = 3, delay: float = 1.0, backoff: fl
                             f"Network error in {func.__name__} failed after {max_retries} retries: {e}"
                         )
 
+                except HTTPException:
+                    # Don't retry on HTTPExceptions (validation errors, etc.)
+                    # These should pass through immediately
+                    raise
+
                 except Exception as e:
                     # Don't retry on non-network errors
                     logger.error(f"Non-retryable error in {func.__name__}: {e}")
@@ -150,6 +155,11 @@ def handle_netbox_errors(func: Callable):
                 status_code=504,
                 detail="NetBox API request timed out. Please try again."
             )
+
+        except HTTPException:
+            # Let HTTPExceptions pass through (validation errors, etc.)
+            # These already have proper status codes and error messages
+            raise
 
         except Exception as e:
             logger.error(f"Unexpected error in {func.__name__}: {e}", exc_info=True)

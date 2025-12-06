@@ -10,9 +10,15 @@ import re
 from typing import Optional, List
 from fastapi import HTTPException
 
-from .netbox_client import get_netbox_client
+from .netbox_client import get_netbox_client, run_netbox_get, run_netbox_write
 from .netbox_cache import get_cached, set_cache
-from .netbox_utils import run_netbox_get, run_netbox_write
+from .netbox_utils import safe_get_id, safe_get_attr
+from .netbox_constants import (
+    TENANT_REDBULL, ROLE_DATA, STATUS_ACTIVE, VLAN_GROUP_PREFIX,
+    CACHE_KEY_REDBULL_TENANT_ID, CACHE_KEY_PREFIXES, CACHE_KEY_VLANS,
+    get_tenant_cache_key, get_role_cache_key,
+    format_vlan_group_name, get_vlan_group_cache_key
+)
 
 logger = logging.getLogger(__name__)
 
@@ -47,46 +53,21 @@ class NetBoxHelpers:
         self.nb = nb_client
 
     async def get_site(self, site_slug: str):
-        """Get site group from NetBox (must already exist - no creation)
+        """Get site group from NetBox (must already exist - no creation)"""
+        normalized_slug = site_slug.lower()
+        site_group = await run_netbox_get(
+            lambda: self.nb.dcim.site_groups.get(slug=normalized_slug),
+            f"get site group {normalized_slug}"
+        )
 
-        Production tokens typically don't have permission to create site groups.
-        Site groups must be pre-configured in NetBox by administrators.
-
-        Args:
-            site_slug: Site group slug to look up
-
-        Returns:
-            Site group object from NetBox
-
-        Raises:
-            HTTPException: If site group doesn't exist
-        """
-        try:
-            # Get existing site group (NO creation)
-            site_group = await run_netbox_get(
-                lambda: self.nb.dcim.site_groups.get(slug=site_slug),
-                f"get site group {site_slug}"
-            )
-
-            if not site_group:
-                logger.error(f"Site group '{site_slug}' not found in NetBox")
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Site group '{site_slug}' does not exist in NetBox. "
-                           f"Please create it in NetBox first or contact your administrator."
-                )
-
-            logger.debug(f"Found site group: {site_slug} (ID: {site_group.id})")
-            return site_group
-
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"Error getting site group '{site_slug}': {e}", exc_info=True)
+        if not site_group:
             raise HTTPException(
-                status_code=500,
-                detail=f"Error fetching site group from NetBox: {str(e)}"
+                status_code=400,
+                detail=f"Site group '{site_slug}' does not exist in NetBox. "
+                       f"Please create it in NetBox first or contact your administrator."
             )
+
+        return site_group
 
     async def cleanup_unused_vlan(self, vlan_obj):
         """
@@ -101,37 +82,28 @@ class NetBoxHelpers:
         try:
             # OPTIMIZATION: Check cached prefixes first (NO API CALL)
             from .netbox_cache import get_cached, invalidate_cache
-            cached_prefixes = get_cached("prefixes")
+            cached_prefixes = get_cached(CACHE_KEY_PREFIXES)
 
             if cached_prefixes is None:
                 # Cache not available - skip cleanup to avoid API spam
                 # This is safer than making an API call during VLAN updates
-                logger.debug(f"Skipping VLAN {vlan_obj.vid} cleanup - prefix cache unavailable")
                 return
 
             # Check if any cached prefix uses this VLAN (NO API CALL)
-            vlan_id_to_check = vlan_obj.id
-            in_use = False
-
-            for prefix in cached_prefixes:
-                if hasattr(prefix, 'vlan') and prefix.vlan:
-                    prefix_vlan_id = prefix.vlan.id if hasattr(prefix.vlan, 'id') else prefix.vlan
-                    if prefix_vlan_id == vlan_id_to_check:
-                        in_use = True
-                        break
+            vlan_id_to_check = safe_get_id(vlan_obj)
+            in_use = any(
+                safe_get_id(safe_get_attr(prefix, 'vlan')) == vlan_id_to_check
+                for prefix in cached_prefixes
+            )
 
             if not in_use:
                 # No prefixes using this VLAN - safe to delete (1 API CALL)
-                logger.info(f"Deleting unused VLAN {vlan_obj.vid} ({vlan_obj.name}) - ID: {vlan_obj.id}")
                 await run_netbox_write(
                     lambda: vlan_obj.delete(),
                     f"delete VLAN {vlan_obj.vid}"
                 )
-                logger.info(f"Successfully deleted VLAN {vlan_obj.vid}")
                 # Invalidate VLAN cache after deletion
-                invalidate_cache("vlans")
-            else:
-                logger.debug(f"VLAN {vlan_obj.vid} still in use, keeping it")
+                invalidate_cache(CACHE_KEY_VLANS)
 
         except Exception as e:
             logger.warning(f"Error cleaning up VLAN {vlan_obj.vid} ({vlan_obj.name}, ID: {vlan_obj.id}): {e}", exc_info=True)
@@ -143,11 +115,21 @@ class NetBoxHelpers:
         IMPORTANT: VLANs should NOT be assigned to site or site_group.
         Only Prefixes are assigned to site_groups.
 
+        IMPORTANT: NetBox has uniqueness constraint: VLANs must be unique by (Group, Name).
+        However, our business logic is: VLANs are unique by (Network, Site, VLAN_ID).
+        
+        This means:
+        - VLAN 22 can exist in Network1/Site1 AND Network2/Site1 (different groups) ✓
+        - VLAN 22 can exist in Network1/Site1 AND Network1/Site2 (different groups) ✓
+        - VLAN 22 CANNOT exist twice in Network1/Site1 (same group) ✗
+        
+        When updating a VLAN's group, if another VLAN already has that group+name,
+        we should use the existing VLAN instead of creating a duplicate.
         """
         # Build filter - search by VLAN ID only, not by site
         vlan_filter = {"vid": vlan_id}
 
-        # Try to get existing VLAN
+        # Try to get existing VLAN by VID
         vlan = await run_netbox_get(
             lambda: self.nb.ipam.vlans.get(**vlan_filter),
             f"get VLAN {vlan_id}"
@@ -158,106 +140,88 @@ class NetBoxHelpers:
             vlan_data = {
                 "vid": vlan_id,
                 "name": name,
-                "status": "active",
             }
 
             # Fetch reference data sequentially (all cached lookups)
             # Tenant and Role are cached (3600s TTL) - lookups are instant
-            tenant = await self.get_tenant("RedBull")
+            tenant = await self.get_tenant(TENANT_REDBULL)
             if tenant:
                 vlan_data["tenant"] = tenant.id
 
-            role = await self.get_role("Data", "vlan")
+            role = await self.get_role(ROLE_DATA, "vlan")
             if role:
                 vlan_data["role"] = role.id
 
             # VLAN Group (may need creation)
             if vrf_name and site_slug:
+                # Normalize site_slug to match NetBox site group naming (capitalized)
                 site_group = site_slug.capitalize()
                 try:
                     vlan_group = await self.get_or_create_vlan_group(vrf_name, site_group)
                     if vlan_group:
                         vlan_data["group"] = vlan_group.id
-                        logger.debug(f"Assigned VLAN group '{vlan_group.name}' to VLAN")
                 except Exception as e:
                     logger.warning(f"Failed to get/create VLAN group: {e}")
 
             # Create new VLAN
+            vlan_data["status"] = STATUS_ACTIVE
             vlan = await run_netbox_write(
                 lambda: self.nb.ipam.vlans.create(**vlan_data),
                 f"create VLAN {vlan_id}"
             )
-            logger.info(f"Created VLAN in NetBox: {vlan_id} ({name}) with tenant=RedBull, role=Data")
         else:
-            # VLAN exists - check if name or group needs to be updated
-            needs_update = False
-
-            if vlan.name != name:
-                logger.info(f"Updating VLAN name from '{vlan.name}' to '{name}' for VLAN ID {vlan_id}")
-                vlan.name = name
-                needs_update = True
-
-            # Ensure VLAN Group is set if provided and not already set
+            # VLAN exists - check if we need to update group
             if vrf_name and site_slug:
                 site_group = site_slug.capitalize()
-                expected_group_name = f"{vrf_name}-ClickCluster-{site_group}"
-
-                # Check if VLAN has the correct group
-                if not vlan.group or (hasattr(vlan.group, 'name') and vlan.group.name != expected_group_name):
-                    try:
-                        vlan_group = await self.get_or_create_vlan_group(vrf_name, site_group)
-                        if vlan_group:
-                            vlan.group = vlan_group.id
-                            logger.info(f"Updating VLAN group to '{vlan_group.name}' for VLAN ID {vlan_id}")
-                            needs_update = True
-                        else:
-                            logger.warning(f"Failed to get/create VLAN group '{expected_group_name}' for VLAN {vlan_id}")
-                    except Exception as e:
-                        logger.error(f"Error creating VLAN group '{expected_group_name}' for VLAN {vlan_id}: {e}")
-                        # Continue VLAN update even if group creation fails
-
-            if needs_update:
-                await run_netbox_write(
-                    lambda: vlan.save(),
-                    f"update VLAN {vlan_id}"
+                vlan_group = await self.get_or_create_vlan_group(vrf_name, site_group)
+                
+                # Check if VLAN with same VID already exists in target group
+                existing_vlan = await run_netbox_get(
+                    lambda: self.nb.ipam.vlans.get(group_id=vlan_group.id, vid=vlan_id),
+                    f"check VLAN {vlan_id} in group '{vlan_group.name}'"
                 )
-                logger.info(f"Updated VLAN {vlan_id} successfully")
+                
+                if existing_vlan:
+                    # Use existing VLAN, update name if needed
+                    if existing_vlan.name != name:
+                        existing_vlan.name = name
+                        await run_netbox_write(lambda: existing_vlan.save(), f"update VLAN {vlan_id} name")
+                    return existing_vlan
+                
+                # Update current VLAN's group
+                if not vlan.group or (hasattr(vlan.group, 'id') and vlan.group.id != vlan_group.id):
+                    vlan.group = vlan_group.id
+                    if vlan.name != name:
+                        vlan.name = name
+                    await run_netbox_write(lambda: vlan.save(), f"update VLAN {vlan_id}")
+            elif vlan.name != name:
+                # Only name update needed
+                vlan.name = name
+                await run_netbox_write(lambda: vlan.save(), f"update VLAN {vlan_id} name")
 
         return vlan
 
     async def get_vrf(self, vrf_name: str):
         """Get VRF from NetBox (do not create - must exist)"""
-        try:
-            vrf = await run_netbox_get(
-                lambda: self.nb.ipam.vrfs.get(name=vrf_name),
-                f"get VRF {vrf_name}"
-            )
+        vrf = await run_netbox_get(
+            lambda: self.nb.ipam.vrfs.get(name=vrf_name),
+            f"get VRF {vrf_name}"
+        )
 
-            if not vrf:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"VRF '{vrf_name}' does not exist in NetBox. Please create it first or select an existing VRF."
-                )
-
-            logger.debug(f"Found VRF in NetBox: {vrf_name} (ID: {vrf.id})")
-            return vrf
-
-        except HTTPException:
-            raise
-        except Exception as e:
-            logger.error(f"Error fetching VRF '{vrf_name}' from NetBox: {e}", exc_info=True)
+        if not vrf:
             raise HTTPException(
-                status_code=500,
-                detail=f"Error fetching VRF from NetBox: {str(e)}"
+                status_code=400,
+                detail=f"VRF '{vrf_name}' does not exist in NetBox. Please create it first or select an existing VRF."
             )
+
+        return vrf
 
     async def get_tenant(self, tenant_name: str):
         """Get tenant from NetBox (cached for performance)"""
         # Check cache first (pre-fetched at startup)
-        cache_key = f"tenant_{tenant_name.lower()}"
+        cache_key = get_tenant_cache_key(tenant_name)
         cached_tenant = get_cached(cache_key)
         if cached_tenant is not None:
-            logger.debug(f"Using cached tenant: {tenant_name} (ID: {cached_tenant.id})")
             return cached_tenant
 
         try:
@@ -270,9 +234,8 @@ class NetBoxHelpers:
                 logger.warning(f"Tenant '{tenant_name}' not found in NetBox")
                 return None
 
-            # Cache for future use
-            set_cache(cache_key, tenant, ttl=300)
-            logger.debug(f"Found tenant in NetBox: {tenant_name} (ID: {tenant.id})")
+            # Cache for future use (static data - 1 hour TTL)
+            set_cache(cache_key, tenant, ttl=3600)
             return tenant
 
         except Exception as e:
@@ -281,14 +244,14 @@ class NetBoxHelpers:
 
     async def get_redbull_tenant_id(self) -> Optional[int]:
         """Get cached RedBull tenant ID for filtering"""
-        cached_id = get_cached("redbull_tenant_id")
+        cached_id = get_cached(CACHE_KEY_REDBULL_TENANT_ID)
         if cached_id is not None:
             return cached_id
 
         # Fetch tenant ID
-        tenant = await self.get_tenant("RedBull")
+        tenant = await self.get_tenant(TENANT_REDBULL)
         if tenant:
-            set_cache("redbull_tenant_id", tenant.id)
+            set_cache(CACHE_KEY_REDBULL_TENANT_ID, tenant.id)
             return tenant.id
 
         return None
@@ -301,10 +264,9 @@ class NetBoxHelpers:
             model_type: Type of model ("vlan" or "prefix")
         """
         # Check cache first (pre-fetched at startup)
-        cache_key = f"role_{role_name.lower()}"
+        cache_key = get_role_cache_key(role_name)
         cached_role = get_cached(cache_key)
         if cached_role is not None:
-            logger.debug(f"Using cached role: {role_name} (ID: {cached_role.id})")
             return cached_role
 
         try:
@@ -318,9 +280,8 @@ class NetBoxHelpers:
                 logger.warning(f"Role '{role_name}' not found in NetBox")
                 return None
 
-            # Cache for future use
-            set_cache(cache_key, role, ttl=300)
-            logger.debug(f"Found role in NetBox: {role_name} (ID: {role.id})")
+            # Cache for future use (static data - 1 hour TTL)
+            set_cache(cache_key, role, ttl=3600)
             return role
 
         except Exception as e:
@@ -334,15 +295,12 @@ class NetBoxHelpers:
 
         OPTIMIZED: Caches VLAN groups to avoid repeated lookups.
         """
-        # Format: "<VRF_name>-ClickCluster-<Site>"
-        group_name = f"{vrf_name}-ClickCluster-{site_group}"
-        logger.debug(f"Getting or creating VLAN Group: {group_name}")
+        group_name = format_vlan_group_name(vrf_name, site_group)
 
         # Check cache first (OPTIMIZATION)
-        cache_key = f"vlan_group_{group_name}"
+        cache_key = get_vlan_group_cache_key(group_name)
         cached_group = get_cached(cache_key)
         if cached_group:
-            logger.debug(f"Using cached VLAN group: {group_name} (ID: {cached_group.id})")
             return cached_group
 
         try:
@@ -353,7 +311,6 @@ class NetBoxHelpers:
             )
 
             if vlan_group:
-                logger.debug(f"Found existing VLAN Group: {group_name} (ID: {vlan_group.id})")
                 # Cache for future use
                 set_cache(cache_key, vlan_group, ttl=300)
                 return vlan_group
@@ -384,7 +341,6 @@ class NetBoxHelpers:
         # Check cache first - VRFs rarely change
         cached_vrfs = get_cached("vrfs")
         if cached_vrfs is not None:
-            logger.debug(f"Using cached VRFs: {cached_vrfs}")
             return cached_vrfs
 
         try:
@@ -393,7 +349,6 @@ class NetBoxHelpers:
                 "fetch VRFs"
             )
             vrf_names = [vrf.name for vrf in vrfs]
-            logger.debug(f"Retrieved {len(vrf_names)} VRFs: {vrf_names}")
 
             # Cache VRFs for 1 hour (they rarely change)
             set_cache("vrfs", vrf_names)
