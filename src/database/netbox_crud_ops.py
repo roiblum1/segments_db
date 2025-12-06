@@ -47,37 +47,28 @@ class NetBoxCRUDOps:
         try:
             logger.debug(f"Creating NetBox prefix for document: {document}")
 
-            # OPTIMIZATION: Fetch all reference data AND VLAN in parallel using asyncio.gather()
-            # This reduces serial API calls from ~200ms total to ~50ms (5x faster)
-            vrf_task = self.helpers.get_vrf(document["vrf"]) if document.get("vrf") else asyncio.sleep(0)
-            site_task = self.helpers.get_site(document["site"]) if document.get("site") else asyncio.sleep(0)
-            tenant_task = self.helpers.get_tenant("RedBull")
-            role_task = self.helpers.get_role("Data", "prefix")
+            # Fetch reference data sequentially (all cached lookups except VLAN creation)
+            # VRF, Site, Tenant, Role are all cached (3600s TTL) - lookups are instant
+            vrf_obj = None
+            if document.get("vrf"):
+                vrf_obj = await self.helpers.get_vrf(document["vrf"])
 
-            # OPTIMIZATION: Include VLAN creation in parallel execution
-            vlan_task = None
+            site_group_obj = None
+            if document.get("site"):
+                site_group_obj = await self.helpers.get_site(document["site"])
+
+            tenant = await self.helpers.get_tenant("RedBull")
+            role = await self.helpers.get_role("Data", "prefix")
+
+            # VLAN creation (may need NetBox write)
+            vlan_obj = None
             if document.get("vlan_id"):
-                vlan_task = self.helpers.get_or_create_vlan(
+                vlan_obj = await self.helpers.get_or_create_vlan(
                     document["vlan_id"],
                     document.get("epg_name", f"VLAN_{document['vlan_id']}"),
                     document.get("site"),
-                    document.get("vrf")  # Pass VRF name for VLAN group creation
+                    document.get("vrf")
                 )
-            else:
-                vlan_task = asyncio.sleep(0)
-
-            # Execute all lookups in parallel (including VLAN)
-            t_parallel = time.time()
-            vrf_obj, site_group_obj, tenant, role, vlan_obj = await asyncio.gather(
-                vrf_task, site_task, tenant_task, role_task, vlan_task
-            )
-            logger.info(f"⏱️  Parallel reference data + VLAN fetch took {(time.time() - t_parallel)*1000:.0f}ms")
-
-            # Validate required objects were fetched
-            if document.get("site") and not site_group_obj:
-                raise Exception(f"Failed to get/create site group: {document['site']}")
-            if document.get("vlan_id") and not vlan_obj:
-                raise Exception(f"Failed to get/create VLAN: {document['vlan_id']}")
 
             # Build prefix data with all associations
             prefix_data = {

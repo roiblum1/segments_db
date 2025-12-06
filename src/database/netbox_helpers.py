@@ -143,10 +143,7 @@ class NetBoxHelpers:
         IMPORTANT: VLANs should NOT be assigned to site or site_group.
         Only Prefixes are assigned to site_groups.
 
-        OPTIMIZED: Parallelizes independent lookups for 4x performance improvement.
         """
-        import asyncio
-
         # Build filter - search by VLAN ID only, not by site
         vlan_filter = {"vid": vlan_id}
 
@@ -164,34 +161,26 @@ class NetBoxHelpers:
                 "status": "active",
             }
 
-            # OPTIMIZATION: Parallelize independent lookups (4x faster)
-            site_task = self.get_site(site_slug) if site_slug else asyncio.sleep(0)
-            tenant_task = self.get_tenant("RedBull")
-            role_task = self.get_role("Data", "vlan")
+            # Fetch reference data sequentially (all cached lookups)
+            # Tenant and Role are cached (3600s TTL) - lookups are instant
+            tenant = await self.get_tenant("RedBull")
+            if tenant:
+                vlan_data["tenant"] = tenant.id
 
-            vlan_group_task = asyncio.sleep(0)
+            role = await self.get_role("Data", "vlan")
+            if role:
+                vlan_data["role"] = role.id
+
+            # VLAN Group (may need creation)
             if vrf_name and site_slug:
                 site_group = site_slug.capitalize()
-                vlan_group_task = self.get_or_create_vlan_group(vrf_name, site_group)
-
-            # Execute all tasks in parallel
-            import time
-            t_start = time.time()
-            site_obj, tenant, role, vlan_group = await asyncio.gather(
-                site_task, tenant_task, role_task, vlan_group_task, return_exceptions=True
-            )
-            logger.debug(f"⏱️  Parallel VLAN reference lookup took {(time.time() - t_start)*1000:.0f}ms")
-
-            # Add associations (check for exceptions from parallel gather)
-            if tenant and not isinstance(tenant, Exception):
-                vlan_data["tenant"] = tenant.id
-            if role and not isinstance(role, Exception):
-                vlan_data["role"] = role.id
-            if vlan_group and not isinstance(vlan_group, Exception):
-                vlan_data["group"] = vlan_group.id
-                logger.debug(f"Assigned VLAN group '{vlan_group.name}' to VLAN")
-            elif vrf_name and site_slug:
-                logger.warning(f"Failed to get/create VLAN group - VLAN will be created without group")
+                try:
+                    vlan_group = await self.get_or_create_vlan_group(vrf_name, site_group)
+                    if vlan_group:
+                        vlan_data["group"] = vlan_group.id
+                        logger.debug(f"Assigned VLAN group '{vlan_group.name}' to VLAN")
+                except Exception as e:
+                    logger.warning(f"Failed to get/create VLAN group: {e}")
 
             # Create new VLAN
             vlan = await run_netbox_write(
