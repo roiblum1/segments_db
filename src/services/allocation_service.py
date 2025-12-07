@@ -85,7 +85,9 @@ class AllocationService:
         """
         logger.info(f"Release request: cluster={cluster_name}, site={site}, vrf={vrf}")
 
-        # Validate VRF
+        # Validate inputs
+        Validators.validate_site(site)
+        Validators.validate_cluster_name(cluster_name)
         await Validators.validate_vrf(vrf)
 
         success = await DatabaseUtils.release_segment(cluster_name, site, vrf)

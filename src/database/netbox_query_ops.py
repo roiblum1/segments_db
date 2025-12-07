@@ -157,8 +157,8 @@ class NetBoxQueryOps:
             elif value is None:
                 if segment_value is not None and segment_value != "null":
                     return False
-            # Case-insensitive match for site field
-            elif field == "site" and isinstance(value, str) and isinstance(segment_value, str):
+            # Case-insensitive match for site and vrf fields
+            elif field in ("site", "vrf") and isinstance(value, str) and isinstance(segment_value, str):
                 if value.lower() != segment_value.lower():
                     return False
             # Exact match for other fields
@@ -184,8 +184,8 @@ class NetBoxQueryOps:
             elif value is None:
                 if segment_value is not None and segment_value != "null":
                     return False
-            # Case-insensitive match for site field
-            elif field == "site" and isinstance(value, str) and isinstance(segment_value, str):
+            # Case-insensitive match for site and vrf fields
+            elif field in ("site", "vrf") and isinstance(value, str) and isinstance(segment_value, str):
                 if value.lower() != segment_value.lower():
                     return False
             elif segment_value != value:

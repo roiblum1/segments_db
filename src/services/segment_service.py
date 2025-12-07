@@ -130,8 +130,9 @@ class SegmentService:
         if not segment:
             raise HTTPException(status_code=404, detail="Segment not found")
 
-        # Convert ObjectId to string
-        segment["_id"] = str(segment["_id"])
+        # Convert ObjectId to string (if not already a string)
+        if not isinstance(segment["_id"], str):
+            segment["_id"] = str(segment["_id"])
 
         logger.debug(f"Retrieved segment {segment_id}: site={segment.get('site')}, vlan_id={segment.get('vlan_id')}")
         return segment
@@ -154,9 +155,10 @@ class SegmentService:
             raise HTTPException(status_code=404, detail="Segment not found")
 
         # Check if VLAN ID change would conflict (only if changing VLAN ID, site, or VRF)
+        existing_vrf = existing_segment.get("vrf")
         if (existing_segment["vlan_id"] != updated_segment.vlan_id or
             existing_segment["site"] != updated_segment.site or
-            existing_segment.get("vrf") != updated_segment.vrf):
+            existing_vrf != updated_segment.vrf):
             if await DatabaseUtils.check_vlan_exists_excluding_id(updated_segment.site, updated_segment.vlan_id, segment_id, updated_segment.vrf):
                 raise HTTPException(
                     status_code=400,

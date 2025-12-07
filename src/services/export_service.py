@@ -30,9 +30,11 @@ class ExportService:
         for segment in segments:
             export_data.append({
                 'Site': segment.get('site', ''),
+                'VRF': segment.get('vrf', ''),
                 'VLAN ID': segment.get('vlan_id', ''),
                 'EPG Name': segment.get('epg_name', ''),
                 'Segment': segment.get('segment', ''),
+                'DHCP': 'Yes' if segment.get('dhcp', False) else 'No',
                 'Description': segment.get('description', ''),
                 'Cluster Name': segment.get('cluster_name', '') if segment.get('cluster_name') else 'Available',
                 'Allocated At': segment.get('allocated_at', ''),
@@ -101,9 +103,10 @@ class ExportService:
                 column_letter = column[0].column_letter
                 for cell in column:
                     try:
-                        if len(str(cell.value)) > max_length:
+                        if cell.value is not None and len(str(cell.value)) > max_length:
                             max_length = len(str(cell.value))
-                    except:
+                    except (AttributeError, TypeError, ValueError):
+                        # Skip cells with non-string values or errors
                         pass
                 adjusted_width = min(max_length + 2, 50)
                 worksheet.column_dimensions[column_letter].width = adjusted_width
