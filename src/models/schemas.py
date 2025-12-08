@@ -90,3 +90,15 @@ class VLANRelease(BaseModel):
         }
     }
 
+class LoginRequest(BaseModel):
+    username: str = Field(..., description="Username", examples=["admin"])
+    password: str = Field(..., description="Password", examples=["admin"])
+
+class LoginResponse(BaseModel):
+    success: bool = Field(..., description="Whether login was successful")
+    message: str = Field(..., description="Response message")
+    token: Optional[str] = Field(None, description="Session token for API authentication (use as Bearer token)")
+
+class AuthStatusResponse(BaseModel):
+    authenticated: bool = Field(..., description="Whether user is authenticated")
+

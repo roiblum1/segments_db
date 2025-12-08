@@ -13,7 +13,46 @@
     </div>
     
     <div class="container">
-        <h1>🌐 VLAN Segment Manager</h1>
+        <div class="header-bar">
+            <h1 style="margin: 0;">🌐 VLAN Segment Manager</h1>
+            <div class="header-actions">
+                <button id="loginBtn" class="btn btn-primary" style="display: none;">
+                    🔐 Login
+                </button>
+                <div id="authSection" style="display: none;">
+                    <span id="userGreeting" style="color: white; margin-right: 10px; font-size: 14px;"></span>
+                    <button id="logoutBtn" class="btn btn-secondary">Logout</button>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Login Modal -->
+        <div id="loginModal" class="modal" style="display: none;">
+            <div class="modal-content login-modal-content">
+                <div class="modal-header">
+                    <h2>🔐 Login</h2>
+                    <button class="close-modal" onclick="closeLoginModal()">&times;</button>
+                </div>
+                <form id="loginForm">
+                    <p style="margin-bottom: 20px; color: var(--text-secondary); text-align: center;">
+                        Login to create, update, or delete segments
+                    </p>
+                    <div class="form-group">
+                        <label for="loginUsername">Username</label>
+                        <input type="text" id="loginUsername" placeholder="Enter username" required autofocus>
+                    </div>
+                    <div class="form-group">
+                        <label for="loginPassword">Password</label>
+                        <input type="password" id="loginPassword" placeholder="Enter password" required>
+                    </div>
+                    <div id="loginError" class="error-banner" style="display: none; margin-bottom: 15px;"></div>
+                    <div style="display: flex; gap: 10px;">
+                        <button type="button" class="btn btn-secondary" onclick="closeLoginModal()" style="flex: 1;">Cancel</button>
+                        <button type="submit" class="btn btn-primary" style="flex: 1;">Login</button>
+                    </div>
+                </form>
+            </div>
+        </div>
         
         <div id="errorBanner" class="error-banner"></div>
         <div id="successBanner" class="success-banner"></div>
@@ -25,7 +64,7 @@
         </div>
         
         <div class="main-content">
-            <div class="card">
+            <div class="card" id="addSegmentCard" style="display: none;">
                 <h2>Add Segment</h2>
                 <form id="addSegmentForm">
                     <div class="form-group">
@@ -66,7 +105,7 @@
                 </form>
             </div>
             
-            <div class="card">
+            <div class="card" id="allocateCard" style="display: none;">
                 <h2>Allocate Segment</h2>
                 <form id="allocateForm">
                     <div class="form-group">
@@ -92,13 +131,13 @@
             </div>
         </div>
         
-        <div class="card full-width">
+        <div class="card full-width" id="bulkImportCard" style="display: none;">
             <h2>Bulk Import Segments</h2>
             <div class="form-group">
                 <label for="bulkImport">Paste CSV data (site,vlan_id,epg_name,segment,vrf,dhcp,description)</label>
                 <textarea id="bulkImport" placeholder="site1,100,EPG_PROD_01,192.168.1.0/24,Network1,true,Production segment
 site1,101,EPG_PROD_02,192.168.2.0/24,Network1,false,Production segment 2
-site2,200,EPG_DEV_01,10.0.1.0/24,Network2,true,Development segment"></textarea>
+site2,200,EPG_DEV_01,10.0.1.0/24,true,Development segment"></textarea>
             </div>
             <button onclick="importBulk()">Import Segments</button>
         </div>

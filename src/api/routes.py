@@ -1,27 +1,75 @@
 from typing import Optional, List
 import logging
-from fastapi import APIRouter, BackgroundTasks, HTTPException
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Depends, Response, Request
+from starlette.responses import JSONResponse
 
 from ..models.schemas import (
     VLANAllocationRequest, VLANAllocationResponse, 
-    VLANRelease, Segment
+    VLANRelease, Segment, LoginRequest, LoginResponse, AuthStatusResponse
 )
 from ..services.allocation_service import AllocationService
 from ..services.segment_service import SegmentService
 from ..services.stats_service import StatsService
 from ..services.logs_service import LogsService
 from ..services.export_service import ExportService
+from ..auth.auth import require_auth, get_current_user, login, logout, get_session_token
 
 router = APIRouter()
 
+# Authentication Routes
+@router.post("/auth/login", response_model=LoginResponse)
+async def auth_login(request: LoginRequest, response: Response):
+    """Login with username and password
+    
+    Returns a session token that can be used as Bearer token for API requests.
+    For web UI, a cookie is also set automatically.
+    """
+    session_token = login(request.username, request.password)
+    if session_token:
+        # Set session cookie (for web UI)
+        response.set_cookie(
+            key="session_token",
+            value=session_token,
+            httponly=True,
+            secure=False,  # Set to True in production with HTTPS
+            samesite="lax",
+            max_age=86400  # 24 hours
+        )
+        # Return token in response body (for API/curl clients)
+        return LoginResponse(
+            success=True, 
+            message="Login successful",
+            token=session_token
+        )
+    else:
+        raise HTTPException(status_code=401, detail="Invalid username or password")
+
+@router.post("/auth/logout")
+async def auth_logout(request: Request, response: Response):
+    """Logout current user"""
+    logout(request)
+    response.delete_cookie(key="session_token")
+    return {"success": True, "message": "Logged out successfully"}
+
+@router.get("/auth/status", response_model=AuthStatusResponse)
+async def auth_status(current_user: bool = Depends(get_current_user)):
+    """Check authentication status"""
+    return AuthStatusResponse(authenticated=current_user)
+
 # VLAN Management Routes
 @router.post("/allocate-vlan", response_model=VLANAllocationResponse)
-async def allocate_vlan(request: VLANAllocationRequest):
+async def allocate_vlan(
+    request: VLANAllocationRequest,
+    _: bool = Depends(require_auth)
+):
     """Allocate a VLAN segment for a cluster"""
     return await AllocationService.allocate_vlan(request)
 
 @router.post("/release-vlan")
-async def release_vlan(request: VLANRelease):
+async def release_vlan(
+    request: VLANRelease,
+    _: bool = Depends(require_auth)
+):
     """Release a VLAN segment allocation"""
     return await AllocationService.release_vlan(request.cluster_name, request.site, request.vrf)
 
@@ -41,7 +89,10 @@ async def search_segments(
     return await SegmentService.search_segments(q, site, allocated)
 
 @router.post("/segments")
-async def create_segment(segment: Segment):
+async def create_segment(
+    segment: Segment,
+    _: bool = Depends(require_auth)
+):
     """Create a new segment"""
     return await SegmentService.create_segment(segment)
 
@@ -51,23 +102,37 @@ async def get_segment(segment_id: str):
     return await SegmentService.get_segment_by_id(segment_id)
 
 @router.put("/segments/{segment_id}")
-async def update_segment(segment_id: str, segment: Segment):
+async def update_segment(
+    segment_id: str,
+    segment: Segment,
+    _: bool = Depends(require_auth)
+):
     """Update a segment"""
     return await SegmentService.update_segment(segment_id, segment)
 
 @router.put("/segments/{segment_id}/clusters")
-async def update_segment_clusters(segment_id: str, request: dict):
+async def update_segment_clusters(
+    segment_id: str,
+    request: dict,
+    _: bool = Depends(require_auth)
+):
     """Update cluster assignment for a segment (for shared segments)"""
     cluster_names = request.get("cluster_names", "")
     return await SegmentService.update_segment_clusters(segment_id, cluster_names)
 
 @router.delete("/segments/{segment_id}")
-async def delete_segment(segment_id: str):
+async def delete_segment(
+    segment_id: str,
+    _: bool = Depends(require_auth)
+):
     """Delete a segment"""
     return await SegmentService.delete_segment(segment_id)
 
 @router.post("/segments/bulk")
-async def create_segments_bulk(segments: List[Segment]):
+async def create_segments_bulk(
+    segments: List[Segment],
+    _: bool = Depends(require_auth)
+):
     """Create multiple segments at once"""
     logger = logging.getLogger(__name__)
     

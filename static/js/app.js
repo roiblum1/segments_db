@@ -6,6 +6,7 @@ let isOnline = true;
 let isDarkMode = localStorage.getItem('darkMode') === 'true';
 let networkSiteMapping = {}; // Maps network -> [sites]
 let allSites = []; // All configured sites
+let isAuthenticated = false; // Authentication state
 
 // Export Functions - Make explicitly global
 window.exportData = async function exportData(format) {
@@ -367,26 +368,28 @@ async function loadSegments() {
                         </span>
                     </td>
                     <td>
-                        <button class="edit"
-                                onclick="editSegment('${segment._id}')"
-                                data-segment-id="${segment._id}">
-                            Edit
-                        </button>
-                        ${isAllocated ? `
-                            <button class="release"
-                                    onclick="releaseSegment('${segment.cluster_name}', '${segment.site}', '${segment.vrf || ''}')"
-                                    data-cluster="${segment.cluster_name}"
-                                    data-site="${segment.site}"
-                                    data-vrf="${segment.vrf || ''}">
-                                Release
-                            </button>
-                        ` : `
-                            <button class="delete"
-                                    onclick="deleteSegment('${segment._id}')"
+                        ${isAuthenticated ? `
+                            <button class="edit"
+                                    onclick="editSegment('${segment._id}')"
                                     data-segment-id="${segment._id}">
-                                Delete
+                                Edit
                             </button>
-                        `}
+                            ${isAllocated ? `
+                                <button class="release"
+                                        onclick="releaseSegment('${segment.cluster_name}', '${segment.site}', '${segment.vrf || ''}')"
+                                        data-cluster="${segment.cluster_name}"
+                                        data-site="${segment.site}"
+                                        data-vrf="${segment.vrf || ''}">
+                                    Release
+                                </button>
+                            ` : `
+                                <button class="delete"
+                                        onclick="deleteSegment('${segment._id}')"
+                                        data-segment-id="${segment._id}">
+                                    Delete
+                                </button>
+                            `}
+                        ` : '<span style="color: #999; font-style: italic;">-</span>'}
                     </td>
                 </tr>
             `;
@@ -399,6 +402,10 @@ async function loadSegments() {
 }
 
 async function deleteSegment(segmentId) {
+    if (!isAuthenticated) {
+        showError('Please login to delete segments');
+        return;
+    }
     if (!confirm('Are you sure you want to delete this segment?')) return;
     
     try {
@@ -416,6 +423,10 @@ async function deleteSegment(segmentId) {
 }
 
 async function releaseSegment(clusterName, site, vrf) {
+    if (!isAuthenticated) {
+        showError('Please login to release segments');
+        return;
+    }
     if (!confirm(`Release segment for ${clusterName} in ${vrf}?`)) return;
     
     try {
@@ -437,6 +448,10 @@ async function releaseSegment(clusterName, site, vrf) {
 }
 
 async function importBulk() {
+    if (!isAuthenticated) {
+        showError('Please login to import segments');
+        return;
+    }
     const textarea = document.getElementById('bulkImport');
     const csvData = textarea.value.trim();
 
@@ -517,7 +532,260 @@ async function importBulk() {
 }
 
 // Event handlers
+// Authentication functions
+async function checkAuthStatus() {
+    try {
+        const response = await fetchAPI('/auth/status');
+        isAuthenticated = response.authenticated;
+        updateUIAuthState();
+        return isAuthenticated;
+    } catch (error) {
+        console.error('Failed to check auth status:', error);
+        isAuthenticated = false;
+        updateUIAuthState();
+        return false;
+    }
+}
+
+async function handleLogin(username, password) {
+    try {
+        const response = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({ username, password })
+        });
+
+        if (response.ok) {
+            isAuthenticated = true;
+            updateUIAuthState();
+            showSuccess('Login successful');
+            return true;
+        } else {
+            const error = await response.json();
+            showLoginError(error.detail || 'Invalid username or password');
+            return false;
+        }
+    } catch (error) {
+        console.error('Login error:', error);
+        showLoginError('Login failed. Please try again.');
+        return false;
+    }
+}
+
+async function handleLogout() {
+    try {
+        await fetch('/api/auth/logout', {
+            method: 'POST'
+        });
+        isAuthenticated = false;
+        updateUIAuthState();
+        showSuccess('Logged out successfully');
+    } catch (error) {
+        console.error('Logout error:', error);
+        // Still update UI even if logout request fails
+        isAuthenticated = false;
+        updateUIAuthState();
+    }
+}
+
+function showLoginError(message) {
+    const errorDiv = document.getElementById('loginError');
+    if (errorDiv) {
+        errorDiv.textContent = message;
+        errorDiv.style.display = 'block';
+    }
+}
+
+function updateUIAuthState() {
+    const loginModal = document.getElementById('loginModal');
+    const loginBtn = document.getElementById('loginBtn');
+    const authSection = document.getElementById('authSection');
+    const logoutBtn = document.getElementById('logoutBtn');
+    const userGreeting = document.getElementById('userGreeting');
+    
+    // Get action cards and forms
+    const addSegmentCard = document.getElementById('addSegmentCard');
+    const allocateCard = document.getElementById('allocateCard');
+    const bulkImportCard = document.getElementById('bulkImportCard');
+    
+    // Get all action buttons and forms
+    const actionButtons = [
+        document.getElementById('addSegmentBtn'),
+        document.getElementById('allocateBtn'),
+        document.querySelector('button[onclick="importBulk()"]')
+    ];
+    
+    const actionForms = [
+        document.getElementById('addSegmentForm'),
+        document.getElementById('allocateForm')
+    ];
+
+    if (isAuthenticated) {
+        // Hide login modal (if open)
+        if (loginModal) {
+            loginModal.style.display = 'none';
+        }
+        
+        // Hide login button, show logout button
+        if (loginBtn) {
+            loginBtn.style.display = 'none';
+        }
+        if (authSection) {
+            authSection.style.display = 'flex';
+            authSection.style.alignItems = 'center';
+        }
+        if (userGreeting) {
+            userGreeting.textContent = 'Logged in';
+        }
+        
+        // Show action cards
+        if (addSegmentCard) {
+            addSegmentCard.style.display = 'block';
+        }
+        if (allocateCard) {
+            allocateCard.style.display = 'block';
+        }
+        if (bulkImportCard) {
+            bulkImportCard.style.display = 'block';
+        }
+        
+        // Enable action buttons
+        actionButtons.forEach(btn => {
+            if (btn) btn.disabled = false;
+        });
+        
+        // Enable form inputs
+        actionForms.forEach(form => {
+            if (form) {
+                const inputs = form.querySelectorAll('input, select, textarea, button');
+                inputs.forEach(input => {
+                    if (input.type !== 'submit') {
+                        input.disabled = false;
+                    }
+                });
+            }
+        });
+        
+        // Enable bulk import textarea
+        const bulkImport = document.getElementById('bulkImport');
+        if (bulkImport) {
+            bulkImport.disabled = false;
+        }
+        
+        // Reload segments to show action buttons
+        loadSegments();
+    } else {
+        // Hide login modal (don't force it open)
+        if (loginModal) {
+            loginModal.style.display = 'none';
+        }
+        
+        // Show login button, hide logout button
+        if (loginBtn) {
+            loginBtn.style.display = 'inline-block';
+        }
+        if (authSection) {
+            authSection.style.display = 'none';
+        }
+        
+        // Hide action cards completely (not just disable)
+        if (addSegmentCard) {
+            addSegmentCard.style.display = 'none';
+        }
+        if (allocateCard) {
+            allocateCard.style.display = 'none';
+        }
+        if (bulkImportCard) {
+            bulkImportCard.style.display = 'none';
+        }
+        
+        // Reload segments to hide action buttons
+        loadSegments();
+    }
+}
+
+function showLoginModal() {
+    const loginModal = document.getElementById('loginModal');
+    if (loginModal) {
+        loginModal.style.display = 'block';
+        // Focus on username field
+        setTimeout(() => {
+            const usernameField = document.getElementById('loginUsername');
+            if (usernameField) {
+                usernameField.focus();
+            }
+        }, 100);
+    }
+}
+
+function closeLoginModal() {
+    const loginModal = document.getElementById('loginModal');
+    if (loginModal) {
+        loginModal.style.display = 'none';
+        // Clear form
+        const loginForm = document.getElementById('loginForm');
+        if (loginForm) {
+            loginForm.reset();
+        }
+        // Clear error
+        const loginError = document.getElementById('loginError');
+        if (loginError) {
+            loginError.style.display = 'none';
+        }
+    }
+}
+
+// Make functions globally accessible
+window.showLoginModal = showLoginModal;
+window.closeLoginModal = closeLoginModal;
+
+// Make logout function globally accessible
+window.handleLogout = handleLogout;
+
 document.addEventListener('DOMContentLoaded', function() {
+    // Setup login button handler
+    document.getElementById('loginBtn').addEventListener('click', () => {
+        showLoginModal();
+    });
+    
+    // Setup login form handler
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const username = document.getElementById('loginUsername').value;
+        const password = document.getElementById('loginPassword').value;
+        
+        const submitBtn = e.target.querySelector('button[type="submit"]');
+        submitBtn.disabled = true;
+        submitBtn.textContent = 'Logging in...';
+        
+        const success = await handleLogin(username, password);
+        
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'Login';
+        
+        if (success) {
+            closeLoginModal();
+        }
+    });
+    
+    // Setup logout button handler
+    document.getElementById('logoutBtn').addEventListener('click', async () => {
+        await handleLogout();
+    });
+    
+    // Close login modal when clicking outside
+    document.addEventListener('click', (e) => {
+        const loginModal = document.getElementById('loginModal');
+        if (loginModal && e.target === loginModal) {
+            closeLoginModal();
+        }
+    });
+    
+    // Check auth status on page load
+    checkAuthStatus();
+    
     document.getElementById('addSegmentForm').addEventListener('submit', async (e) => {
         e.preventDefault();
 
@@ -653,6 +921,9 @@ document.addEventListener('DOMContentLoaded', function() {
     async function init() {
         try {
             console.log('Initializing application...');
+            // Check auth status first
+            await checkAuthStatus();
+            
             // Load network-site mapping first, then load sites and VRFs
             await loadNetworkSiteMapping();
             await Promise.all([
@@ -698,6 +969,10 @@ document.addEventListener('DOMContentLoaded', function() {
 
 // Edit segment functionality
 async function editSegment(segmentId) {
+    if (!isAuthenticated) {
+        showError('Please login to edit segments');
+        return;
+    }
     try {
         // Get segment details
         const segment = await fetchAPI(`/segments/${segmentId}`);

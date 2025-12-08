@@ -278,6 +278,10 @@ tr:hover {
     grid-column: 1 / -1;
 }
 
+#bulkImportCard {
+    margin-bottom: 30px;
+}
+
 /* Filter Styles */
 .filters {
     display: flex;
@@ -451,6 +455,22 @@ code {
     color: #e2e8f0;
 }
 
+.header-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+    gap: 15px;
+}
+
+.header-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-right: 20px;
+}
+
 .theme-toggle {
     position: fixed;
     top: 20px;
@@ -596,14 +616,43 @@ code {
     height: 100%;
     background-color: rgba(0, 0, 0, 0.5);
     backdrop-filter: blur(4px);
+    animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
 }
 
 .modal-content {
     background-color: var(--card-background);
-    margin: 2% auto;
+    margin: 5% auto;
     padding: 0;
     border: none;
     border-radius: 12px;
+    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    animation: slideDown 0.3s ease;
+}
+
+@keyframes slideDown {
+    from {
+        transform: translateY(-50px);
+        opacity: 0;
+    }
+    to {
+        transform: translateY(0);
+        opacity: 1;
+    }
+}
+
+.login-modal-content {
+    max-width: 420px;
+    width: 90%;
+}
     width: 90%;
     max-width: 500px;
     max-height: 90vh;
@@ -627,17 +676,41 @@ code {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 20px 24px;
+    padding: 24px 28px;
     border-bottom: 1px solid var(--border-color);
-    background: var(--gradient-primary);
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
     border-radius: 12px 12px 0 0;
 }
 
+.modal-header h2,
+.modal-header h2,
 .modal-header h3 {
     margin: 0;
-    font-size: 1.2rem;
+    font-size: 1.4rem;
     font-weight: 600;
+}
+
+.modal-header h2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.login-modal-content {
+    max-width: 420px;
+    width: 90%;
+}
+
+.modal-header h2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.login-modal-content {
+    max-width: 420px;
+    width: 90%;
 }
 
 .close-modal {
