@@ -68,6 +68,12 @@
                 <h2>Add Segment</h2>
                 <form id="addSegmentForm">
                     <div class="form-group">
+                        <label for="segmentVrf">VRF / Network</label>
+                        <select id="segmentVrf" required>
+                            <option value="">Select VRF...</option>
+                        </select>
+                    </div>
+                    <div class="form-group">
                         <label for="segmentSite">Site</label>
                         <select id="segmentSite" required>
                             <option value="">Select site...</option>
@@ -84,12 +90,6 @@
                     <div class="form-group">
                         <label for="networkSegment">Network Segment</label>
                         <input type="text" id="networkSegment" placeholder="192.168.1.0/24" required>
-                    </div>
-                    <div class="form-group">
-                        <label for="segmentVrf">VRF / Network</label>
-                        <select id="segmentVrf" required>
-                            <option value="">Select VRF...</option>
-                        </select>
                     </div>
                     <div class="form-group">
                         <label class="checkbox-label">
@@ -109,8 +109,10 @@
                 <h2>Allocate Segment</h2>
                 <form id="allocateForm">
                     <div class="form-group">
-                        <label for="clusterName">Cluster Name</label>
-                        <input type="text" id="clusterName" placeholder="cluster-prod-01" required>
+                        <label for="allocationVrf">Network (VRF)</label>
+                        <select id="allocationVrf" required>
+                            <option value="">Select Network...</option>
+                        </select>
                     </div>
                     <div class="form-group">
                         <label for="allocationSite">Site</label>
@@ -119,10 +121,8 @@
                         </select>
                     </div>
                     <div class="form-group">
-                        <label for="allocationVrf">Network (VRF)</label>
-                        <select id="allocationVrf" required>
-                            <option value="">Select Network...</option>
-                        </select>
+                        <label for="clusterName">Cluster Name</label>
+                        <input type="text" id="clusterName" placeholder="cluster-prod-01" required>
                     </div>
                     <button type="submit" id="allocateBtn">Allocate Segment</button>
                 </form>

@@ -53,21 +53,40 @@ class NetBoxHelpers:
         self.nb = nb_client
 
     async def get_site(self, site_slug: str):
-        """Get site group from NetBox (must already exist - no creation)"""
-        normalized_slug = site_slug.lower()
+        """Get site group from NetBox (must already exist - no creation)
+
+        Tries exact match first, then falls back to lowercase for compatibility.
+        This handles both uppercase slugs (production) and lowercase slugs (test).
+        """
+        # Try exact match first (for production with uppercase slugs like "Site1")
         site_group = await run_netbox_get(
-            lambda: self.nb.dcim.site_groups.get(slug=normalized_slug),
-            f"get site group {normalized_slug}"
+            lambda: self.nb.dcim.site_groups.get(slug=site_slug),
+            f"get site group {site_slug}"
         )
 
-        if not site_group:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Site group '{site_slug}' does not exist in NetBox. "
-                       f"Please create it in NetBox first or contact your administrator."
+        if site_group:
+            logger.info(f"Site group found via exact match: '{site_slug}' → slug='{site_group.slug}' (ID: {site_group.id})")
+            return site_group
+
+        # If not found, try lowercase (for test environments with lowercase slugs)
+        if site_slug != site_slug.lower():
+            logger.debug(f"Site group '{site_slug}' not found, retrying with lowercase '{site_slug.lower()}'")
+            site_group = await run_netbox_get(
+                lambda: self.nb.dcim.site_groups.get(slug=site_slug.lower()),
+                f"get site group {site_slug.lower()}"
             )
 
-        return site_group
+            if site_group:
+                logger.info(f"Site group found via lowercase fallback: '{site_slug}' → slug='{site_group.slug}' (ID: {site_group.id})")
+                return site_group
+
+        # Not found with either method
+        logger.error(f"Site group '{site_slug}' not found (tried exact match and lowercase)")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Site group '{site_slug}' does not exist in NetBox. "
+                   f"Please create it in NetBox first or contact your administrator."
+        )
 
     async def cleanup_unused_vlan(self, vlan_obj):
         """
