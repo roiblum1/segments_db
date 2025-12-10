@@ -42,7 +42,7 @@ body {
 }
 
 .container {
-    max-width: 1400px;
+    max-width: 2800px;
     margin: 0 auto;
 }
 
@@ -226,13 +226,14 @@ button.secondary:hover:not(:disabled) {
 }
 
 .table-container {
-    max-height: 500px;
+    max-height: 700px;
     overflow-y: auto;
     overflow-x: auto;
 }
 
 table {
     width: 100%;
+    table-layout: auto;
     border-collapse: collapse;
 }
 
@@ -244,11 +245,61 @@ th, td {
     color: var(--text-color);
 }
 
-/* Allow EPG name column to wrap for long names (up to 35 chars) */
+/* Optimize column widths for compact display without horizontal scrolling */
+/* Site column (1) */
+td:nth-child(1), th:nth-child(1) {
+    min-width: 80px;
+    max-width: 100px;
+}
+
+/* VRF column (2) - compact to reduce gap */
+td:nth-child(2), th:nth-child(2) {
+    min-width: 90px;
+    max-width: 120px;
+}
+
+/* VLAN ID column (3) - compact */
 td:nth-child(3), th:nth-child(3) {
-    max-width: 280px;
+    min-width: 70px;
+    max-width: 90px;
+}
+
+/* EPG Name column (4) - allow wrap for long names (up to 35 chars) */
+td:nth-child(4), th:nth-child(4) {
+    min-width: 180px;
+    max-width: 300px;
     white-space: normal;
-    word-break: break-word;
+    overflow-wrap: break-word;
+}
+
+/* Network Segment column (5) */
+td:nth-child(5), th:nth-child(5) {
+    min-width: 140px;
+    max-width: 180px;
+}
+
+/* DHCP column (6) - compact */
+td:nth-child(6), th:nth-child(6) {
+    min-width: 60px;
+    max-width: 80px;
+}
+
+/* Cluster column (7) */
+td:nth-child(7), th:nth-child(7) {
+    min-width: 120px;
+    max-width: 180px;
+}
+
+/* Status column (8) - compact */
+td:nth-child(8), th:nth-child(8) {
+    min-width: 90px;
+    max-width: 120px;
+}
+
+/* Actions column (9) - compact */
+td:nth-child(9), th:nth-child(9) {
+    min-width: 100px;
+    max-width: 130px;
 }
 
 th {
