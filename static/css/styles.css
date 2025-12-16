@@ -526,7 +526,7 @@ code {
     display: flex;
     align-items: center;
     gap: 10px;
-    margin-right: 20px;
+    margin-right: 90px;
 }
 
 .theme-toggle {
