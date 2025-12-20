@@ -102,7 +102,8 @@ class OrganizationValidators:
         Raises:
             HTTPException 400: If VRF is invalid or doesn't exist
         """
-        from ...database.netbox_storage import NetBoxStorage
+        # Import get_storage to use singleton pattern (not NetBoxStorage directly)
+        from ...database.netbox_storage import get_storage
 
         logger.debug(f"Validating VRF: {vrf}")
 
@@ -113,8 +114,8 @@ class OrganizationValidators:
                 detail="VRF name cannot be empty"
             )
 
-        # Get available VRFs from NetBox
-        storage = NetBoxStorage()
+        # Get available VRFs from NetBox using singleton
+        storage = get_storage()
         try:
             # Get VRFs from storage
             available_vrfs = await storage.get_vrfs()

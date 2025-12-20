@@ -20,6 +20,7 @@ class DataValidators:
     @staticmethod
     def validate_update_data(update_data: Dict[str, Any]) -> None:
         """Validate bulk update data to ensure no malicious content"""
+        # Import here to avoid circular dependency (InputValidators imports DataValidators)
         from .input_validators import InputValidators
 
         # Check for empty updates

@@ -42,8 +42,8 @@ class AllocationUtils:
         if vrf:
             query_filter["vrf"] = vrf
 
-        # Use optimized find for exact match first
-        exact_match = await storage.find_one_optimized(query_filter)
+        # Try exact match first
+        exact_match = await storage.find_one(query_filter)
         if exact_match:
             return exact_match
 
@@ -134,7 +134,7 @@ class AllocationUtils:
                 }
             }
         )
-        return result > 0
+        return result  # Result is already bool, no need for > 0 comparison
 
     @staticmethod
     async def release_segment(cluster_name: str, site: str, vrf: str = None) -> bool:
@@ -179,7 +179,7 @@ class AllocationUtils:
                     }
                 }
             )
-            return result > 0
+            return result  # Result is already bool, no need for > 0 comparison
 
         # If it's a shared segment, remove only this cluster
         cluster_list = [c.strip() for c in current_clusters.split(",")]
@@ -209,6 +209,6 @@ class AllocationUtils:
                         }
                     }
                 )
-            return result > 0
+            return result  # Result is already bool, no need for > 0 comparison
 
         return False

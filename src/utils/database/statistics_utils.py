@@ -16,15 +16,22 @@ class StatisticsUtils:
 
     @staticmethod
     async def get_site_statistics(site: str) -> Dict[str, Any]:
-        """Get statistics for a specific site"""
+        """Get statistics for a specific site
+
+        Optimized to use single query instead of multiple count_documents calls.
+        This is more efficient because:
+        1. Fetches data from cache (prefixes cached for 10 minutes)
+        2. Calculates counts in Python instead of additional API calls
+        3. Reduces load on NetBox
+        """
         storage = get_storage()
 
-        total_segments = await storage.count_documents({"site": site})
-        allocated = await storage.count_documents({
-            "site": site,
-            "cluster_name": {"$ne": None},
-            "released": False
-        })
+        # Single query instead of two count_documents calls
+        segments = await storage.find({"site": site})
+
+        total_segments = len(segments)
+        allocated = sum(1 for s in segments
+                       if s.get("cluster_name") and not s.get("released", False))
 
         return {
             "site": site,

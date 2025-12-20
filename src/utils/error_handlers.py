@@ -434,7 +434,8 @@ def netbox_operation(operation_name: str, threshold_ms: int = 1000, max_retries:
         async def create_segment(segment: Segment):
             ...
     """
-    from ..utils.logging_decorators import log_operation_timing
+    # Import from same directory (error_handlers.py is IN utils/)
+    from .logging_decorators import log_operation_timing
 
     def decorator(func: Callable) -> Callable:
         # Apply decorators in correct order (innermost to outermost):

@@ -56,11 +56,11 @@ class SegmentCRUD:
             {"_id": segment_id},
             {"$set": update_data}
         )
-        return result > 0
+        return result  # Result is already bool, no need for > 0 comparison
 
     @staticmethod
     async def delete_segment_by_id(segment_id: str) -> bool:
         """Delete segment by ID"""
         storage = get_storage()
         result = await storage.delete_one({"_id": segment_id})
-        return result > 0
+        return result  # Result is already bool, no need for > 0 comparison
