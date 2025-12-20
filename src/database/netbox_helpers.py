@@ -17,7 +17,8 @@ from .netbox_constants import (
     TENANT_REDBULL, ROLE_DATA, STATUS_ACTIVE, VLAN_GROUP_PREFIX,
     CACHE_KEY_REDBULL_TENANT_ID, CACHE_KEY_PREFIXES, CACHE_KEY_VLANS,
     get_tenant_cache_key, get_role_cache_key,
-    format_vlan_group_name, get_vlan_group_cache_key
+    format_vlan_group_name, get_vlan_group_cache_key,
+    CACHE_TTL_SHORT, CACHE_TTL_LONG
 )
 
 logger = logging.getLogger(__name__)
@@ -84,8 +85,13 @@ class NetBoxHelpers:
         logger.error(f"Site group '{site_slug}' not found (tried exact match and lowercase)")
         raise HTTPException(
             status_code=400,
-            detail=f"Site group '{site_slug}' does not exist in NetBox. "
-                   f"Please create it in NetBox first or contact your administrator."
+            detail={
+                "error": "site_group_not_found",
+                "message": f"Site group '{site_slug}' does not exist in NetBox",
+                "tried_values": [site_slug, site_slug.lower()] if site_slug != site_slug.lower() else [site_slug],
+                "suggestion": f"Create site group '{site_slug}' in NetBox DCIM > Site Groups",
+                "docs_url": "https://docs.netbox.dev/en/stable/models/dcim/sitegroup/"
+            }
         )
 
     async def cleanup_unused_vlan(self, vlan_obj):
@@ -253,8 +259,8 @@ class NetBoxHelpers:
                 logger.warning(f"Tenant '{tenant_name}' not found in NetBox")
                 return None
 
-            # Cache for future use (static data - 1 hour TTL)
-            set_cache(cache_key, tenant, ttl=3600)
+            # Cache for future use (static data)
+            set_cache(cache_key, tenant, ttl=CACHE_TTL_LONG)
             return tenant
 
         except Exception as e:
@@ -299,8 +305,8 @@ class NetBoxHelpers:
                 logger.warning(f"Role '{role_name}' not found in NetBox")
                 return None
 
-            # Cache for future use (static data - 1 hour TTL)
-            set_cache(cache_key, role, ttl=3600)
+            # Cache for future use (static data)
+            set_cache(cache_key, role, ttl=CACHE_TTL_LONG)
             return role
 
         except Exception as e:
@@ -330,8 +336,8 @@ class NetBoxHelpers:
             )
 
             if vlan_group:
-                # Cache for future use
-                set_cache(cache_key, vlan_group, ttl=300)
+                # Cache for future use (may change with new allocations)
+                set_cache(cache_key, vlan_group, ttl=CACHE_TTL_SHORT)
                 return vlan_group
 
             # Create new VLAN Group if it doesn't exist
@@ -347,7 +353,7 @@ class NetBoxHelpers:
             )
             logger.info(f"Successfully created VLAN Group in NetBox: {group_name} (ID: {vlan_group.id})")
             # Cache the newly created group
-            set_cache(cache_key, vlan_group, ttl=300)
+            set_cache(cache_key, vlan_group, ttl=CACHE_TTL_SHORT)
             return vlan_group
 
         except Exception as e:

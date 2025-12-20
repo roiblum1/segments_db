@@ -57,11 +57,6 @@ class NetBoxQueryOps:
         results = await self.find(query)
         return results[0] if results else None
 
-    async def find_one_optimized(self, query: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        """Optimized find_one that uses NetBox API filtering to reduce data transfer"""
-        results = await self.find(query)
-        return results[0] if results else None
-
     async def find(self, query: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         """
         Find segments matching the query

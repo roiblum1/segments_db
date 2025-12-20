@@ -318,7 +318,7 @@ class NetBoxCRUDOps:
         update: Dict[str, Any],
         sort: Optional[List[tuple]] = None
     ) -> Optional[Dict[str, Any]]:
-        """Find and update a segment atomically"""
+        """Find and update a segment atomically, returning fresh data"""
         segments = await self.query_ops.find(query)
         if not segments:
             return None
@@ -334,11 +334,12 @@ class NetBoxCRUDOps:
         # Get first segment after sorting
         segment = segments[0]
 
-        # Update it
-        await self.update_one({"_id": segment["_id"]}, update)
+        # Update it and CHECK the result
+        success = await self.update_one({"_id": segment["_id"]}, update)
+        if not success:
+            logger.error(f"find_one_and_update: update failed for segment {segment['_id']}")
+            return None
 
-        # Apply updates to in-memory segment instead of fetching from NetBox again
-        updated_segment = segment.copy()
-        if "$set" in update:
-            updated_segment.update(update["$set"])
-        return updated_segment
+        # Fetch fresh data from NetBox to ensure consistency
+        # This prevents returning stale data if the update had side effects
+        return await self.query_ops.find_one({"_id": segment["_id"]})

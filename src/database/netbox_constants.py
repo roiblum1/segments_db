@@ -35,6 +35,11 @@ CACHE_KEY_PREFIXES = "prefixes"
 CACHE_KEY_VLANS = "vlans"
 CACHE_KEY_VRFS = "vrfs"
 
+# Cache TTL values (in seconds)
+CACHE_TTL_SHORT = 300      # 5 minutes - VLAN groups (may change with new allocations)
+CACHE_TTL_MEDIUM = 600     # 10 minutes - Prefixes, VLANs (change moderately)
+CACHE_TTL_LONG = 3600      # 1 hour - Tenants, Roles, Site Groups, VRFs (static data)
+
 def get_tenant_cache_key(tenant_name: str) -> str:
     """Get cache key for tenant"""
     return f"tenant_{tenant_name.lower()}"

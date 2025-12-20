@@ -10,7 +10,10 @@ import logging
 import time
 from typing import Optional, Any, Dict
 import asyncio
-from .netbox_constants import CACHE_KEY_REDBULL_TENANT_ID, CACHE_KEY_PREFIXES, CACHE_KEY_VLANS, CACHE_KEY_VRFS
+from .netbox_constants import (
+    CACHE_KEY_REDBULL_TENANT_ID, CACHE_KEY_PREFIXES, CACHE_KEY_VLANS, CACHE_KEY_VRFS,
+    CACHE_TTL_SHORT, CACHE_TTL_MEDIUM, CACHE_TTL_LONG
+)
 
 logger = logging.getLogger(__name__)
 
@@ -18,17 +21,17 @@ logger = logging.getLogger(__name__)
 # Optimized caching to reduce NetBox API calls while keeping data reasonably fresh
 # Now supports dynamic cache keys (e.g., site_group_{id}) with automatic TTL assignment
 _cache: Dict[str, Dict[str, Any]] = {
-    CACHE_KEY_PREFIXES: {"data": None, "timestamp": 0, "ttl": 600},  # 10 minutes (matches CLAUDE.md spec)
-    CACHE_KEY_VLANS: {"data": None, "timestamp": 0, "ttl": 600},  # 10 minutes
-    CACHE_KEY_REDBULL_TENANT_ID: {"data": None, "timestamp": 0, "ttl": 3600},  # 1 hour (rarely changes)
-    CACHE_KEY_VRFS: {"data": None, "timestamp": 0, "ttl": 3600},  # 1 hour (rarely changes)
-    "site_groups": {"data": None, "timestamp": 0, "ttl": 3600},  # 1 hour (rarely changes)
-    "roles": {"data": None, "timestamp": 0, "ttl": 3600},  # 1 hour (rarely changes)
-    "tenants": {"data": None, "timestamp": 0, "ttl": 3600},  # 1 hour (rarely changes)
+    CACHE_KEY_PREFIXES: {"data": None, "timestamp": 0, "ttl": CACHE_TTL_MEDIUM},  # 10 minutes
+    CACHE_KEY_VLANS: {"data": None, "timestamp": 0, "ttl": CACHE_TTL_MEDIUM},  # 10 minutes
+    CACHE_KEY_REDBULL_TENANT_ID: {"data": None, "timestamp": 0, "ttl": CACHE_TTL_LONG},  # 1 hour
+    CACHE_KEY_VRFS: {"data": None, "timestamp": 0, "ttl": CACHE_TTL_LONG},  # 1 hour
+    "site_groups": {"data": None, "timestamp": 0, "ttl": CACHE_TTL_LONG},  # 1 hour
+    "roles": {"data": None, "timestamp": 0, "ttl": CACHE_TTL_LONG},  # 1 hour
+    "tenants": {"data": None, "timestamp": 0, "ttl": CACHE_TTL_LONG},  # 1 hour
 }
 
 # Default TTL for dynamic cache keys (e.g., site_group_123, role_data_prefix)
-_default_ttl = 600  # 10 minutes
+_default_ttl = CACHE_TTL_MEDIUM  # 10 minutes
 
 # In-flight request tracking to prevent duplicate concurrent fetches
 _inflight_requests: Dict[str, asyncio.Task] = {}

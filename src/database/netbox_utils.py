@@ -7,6 +7,9 @@ Common utilities for safe attribute access, custom fields handling, and validati
 from typing import Any, Optional, Dict
 from datetime import datetime, timezone
 
+# Import cache functions at module level to avoid circular import issues
+from .netbox_cache import get_cached
+
 
 def safe_get_attr(obj: Any, attr: str, default: Any = None) -> Any:
     """Safely get attribute from object, return default if not found"""
@@ -47,15 +50,14 @@ def get_site_slug_from_prefix(prefix: Any) -> Optional[str]:
     """Extract site slug from prefix scope (Site Group)"""
     if not hasattr(prefix, 'scope_type') or not prefix.scope_type:
         return None
-    
+
     if 'sitegroup' not in str(prefix.scope_type).lower():
         return None
-    
+
     if not hasattr(prefix, 'scope_id') or not prefix.scope_id:
         return None
-    
+
     # Try to get from cached site group
-    from .netbox_cache import get_cached
     cache_key = f"site_group_{prefix.scope_id}"
     site_group = get_cached(cache_key)
     
