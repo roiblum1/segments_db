@@ -12,7 +12,7 @@ from ..services.segment_service import SegmentService
 from ..services.stats_service import StatsService
 from ..services.logs_service import LogsService
 from ..services.export_service import ExportService
-from ..auth.auth import require_auth, get_current_user, login, logout, get_session_token
+from ..auth.auth import require_auth, get_current_user, login, logout, get_session_token, SESSION_TTL_DAYS
 
 router = APIRouter()
 
@@ -20,20 +20,20 @@ router = APIRouter()
 @router.post("/auth/login", response_model=LoginResponse)
 async def auth_login(request: LoginRequest, response: Response):
     """Login with username and password
-    
+
     Returns a session token that can be used as Bearer token for API requests.
     For web UI, a cookie is also set automatically.
     """
     session_token = login(request.username, request.password)
     if session_token:
-        # Set session cookie (for web UI)
+        # Set session cookie (for web UI) - matches session TTL
         response.set_cookie(
             key="session_token",
             value=session_token,
             httponly=True,
             secure=False,  # Set to True in production with HTTPS
             samesite="lax",
-            max_age=86400  # 24 hours
+            max_age=SESSION_TTL_DAYS * 86400  # Convert days to seconds (7 days = 604800 seconds)
         )
         # Return token in response body (for API/curl clients)
         return LoginResponse(

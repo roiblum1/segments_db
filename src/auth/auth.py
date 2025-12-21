@@ -1,4 +1,6 @@
 import os
+import json
+from pathlib import Path
 from typing import Optional
 from fastapi import HTTPException, Depends, status
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
@@ -6,6 +8,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 import secrets
 import logging
+from datetime import datetime, timezone, timedelta
 
 logger = logging.getLogger(__name__)
 
@@ -13,18 +16,79 @@ logger = logging.getLogger(__name__)
 AUTH_USERNAME = os.getenv("AUTH_USERNAME", "admin")
 AUTH_PASSWORD = os.getenv("AUTH_PASSWORD", "admin")
 
-# Session storage (in-memory, simple implementation)
-# In production, consider using Redis or database-backed sessions
+# Session storage file path (persistent across restarts)
+SESSION_FILE = Path("data/sessions.json")
+SESSION_FILE.parent.mkdir(exist_ok=True)
+
+# Session TTL (time to live) - sessions expire after 7 days of inactivity
+SESSION_TTL_DAYS = 7
+
+# Session storage (loaded from file, persists across restarts)
 _sessions: dict[str, dict] = {}
 
 # HTTP Basic Auth security scheme (for simple curl -u username:password)
 basic_security = HTTPBasic(auto_error=False)
 
 
+def _load_sessions() -> None:
+    """Load sessions from file on startup"""
+    global _sessions
+    try:
+        if SESSION_FILE.exists():
+            with open(SESSION_FILE, 'r') as f:
+                loaded_sessions = json.load(f)
+
+                # Clean up expired sessions while loading
+                now = datetime.now(timezone.utc)
+                _sessions = {}
+                expired_count = 0
+
+                for token, session_data in loaded_sessions.items():
+                    # Parse expiry time
+                    expires_at_str = session_data.get("expires_at")
+                    if expires_at_str:
+                        expires_at = datetime.fromisoformat(expires_at_str)
+
+                        # Only keep sessions that haven't expired
+                        if expires_at > now:
+                            _sessions[token] = session_data
+                        else:
+                            expired_count += 1
+
+                if expired_count > 0:
+                    logger.info(f"Cleaned up {expired_count} expired sessions on startup")
+                    _save_sessions()  # Save cleaned sessions
+
+                logger.info(f"Loaded {len(_sessions)} active sessions from {SESSION_FILE}")
+        else:
+            logger.info("No existing session file found, starting with empty sessions")
+            _sessions = {}
+    except Exception as e:
+        logger.error(f"Failed to load sessions from file: {e}")
+        _sessions = {}
+
+
+def _save_sessions() -> None:
+    """Save sessions to file for persistence"""
+    try:
+        with open(SESSION_FILE, 'w') as f:
+            json.dump(_sessions, f, indent=2)
+    except Exception as e:
+        logger.error(f"Failed to save sessions to file: {e}")
+
+
 def create_session() -> str:
-    """Create a new session token"""
+    """Create a new session token with expiry time"""
     session_token = secrets.token_urlsafe(32)
-    _sessions[session_token] = {"authenticated": True}
+    expires_at = datetime.now(timezone.utc) + timedelta(days=SESSION_TTL_DAYS)
+
+    _sessions[session_token] = {
+        "authenticated": True,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "expires_at": expires_at.isoformat()
+    }
+
+    _save_sessions()  # Persist to file
     return session_token
 
 
@@ -34,17 +98,39 @@ def get_session_token(request: Request) -> Optional[str]:
 
 
 def validate_session(session_token: Optional[str]) -> bool:
-    """Validate if session token is valid and authenticated"""
+    """Validate if session token is valid and not expired"""
     if not session_token:
         return False
+
     session = _sessions.get(session_token)
-    return session is not None and session.get("authenticated", False)
+    if not session or not session.get("authenticated", False):
+        return False
+
+    # Check expiry
+    expires_at_str = session.get("expires_at")
+    if expires_at_str:
+        expires_at = datetime.fromisoformat(expires_at_str)
+        now = datetime.now(timezone.utc)
+
+        if expires_at <= now:
+            # Session expired, remove it
+            logger.info(f"Session expired, removing")
+            invalidate_session(session_token)
+            return False
+
+        # Session is valid, extend expiry (rolling window)
+        new_expiry = now + timedelta(days=SESSION_TTL_DAYS)
+        session["expires_at"] = new_expiry.isoformat()
+        _save_sessions()  # Persist updated expiry
+
+    return True
 
 
 def invalidate_session(session_token: Optional[str]):
     """Invalidate a session token"""
     if session_token and session_token in _sessions:
         del _sessions[session_token]
+        _save_sessions()  # Persist to file
 
 
 async def get_current_user(
@@ -111,4 +197,10 @@ def logout(request: Request):
 def check_auth_configured() -> bool:
     """Check if authentication is properly configured"""
     return bool(AUTH_USERNAME and AUTH_PASSWORD)
+
+
+def init_sessions() -> None:
+    """Initialize session storage - load from file on startup"""
+    _load_sessions()
+    logger.info(f"Session storage initialized with {len(_sessions)} active sessions")
 

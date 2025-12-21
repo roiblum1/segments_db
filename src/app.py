@@ -8,6 +8,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .config.settings import setup_logging, SITES, validate_site_prefixes
 from .api.routes import router
 from .database.netbox_storage import init_storage, close_storage
+from .auth.auth import init_sessions
 import os
 
 # Setup logging
@@ -17,6 +18,10 @@ logger = setup_logging()
 async def lifespan(app: FastAPI):
     # Startup
     try:
+        # Initialize session storage (loads from file)
+        logger.info("Initializing session storage...")
+        init_sessions()
+
         # Validate site prefixes configuration before anything else
         logger.info("Validating site prefixes configuration...")
         validate_site_prefixes()
