@@ -4,9 +4,10 @@ Handles calculation of site statistics and utilization metrics.
 """
 
 import logging
-from typing import Dict, Any
+from typing import Dict, Any, List
 
 from ...database.netbox_storage import get_storage
+from ...config.settings import SITES
 
 logger = logging.getLogger(__name__)
 
@@ -40,3 +41,36 @@ class StatisticsUtils:
             "available": total_segments - allocated,
             "utilization": round((allocated / total_segments * 100) if total_segments > 0 else 0, 1)
         }
+
+    @staticmethod
+    async def get_all_sites_statistics() -> List[Dict[str, Any]]:
+        """Get statistics for all sites with a single database query
+
+        This is much more efficient than calling get_site_statistics() for each site.
+        Instead of N queries (one per site), this makes 1 query and groups in Python.
+
+        Returns:
+            List of statistics dictionaries, one per site
+        """
+        storage = get_storage()
+
+        # Single query for ALL segments (uses 10-minute cache)
+        all_segments = await storage.find({})
+
+        # Group by site and calculate stats in Python
+        stats = []
+        for site in SITES:
+            site_segments = [s for s in all_segments if s.get("site") == site]
+            total_segments = len(site_segments)
+            allocated = sum(1 for s in site_segments
+                           if s.get("cluster_name") and not s.get("released", False))
+
+            stats.append({
+                "site": site,
+                "total_segments": total_segments,
+                "allocated": allocated,
+                "available": total_segments - allocated,
+                "utilization": round((allocated / total_segments * 100) if total_segments > 0 else 0, 1)
+            })
+
+        return stats

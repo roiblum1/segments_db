@@ -1,6 +1,6 @@
 import logging
 import io
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
 import pandas as pd
 from fastapi import HTTPException
@@ -64,8 +64,8 @@ class ExportService:
         csv_content = csv_buffer.getvalue()
         csv_buffer.close()
 
-        # Generate filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Generate filename with timezone-aware timestamp
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         site_suffix = f"_{site}" if site else ""
         allocated_suffix = "_allocated" if allocated is True else "_available" if allocated is False else ""
         filename = f"segments{site_suffix}{allocated_suffix}_{timestamp}.csv"
@@ -113,8 +113,8 @@ class ExportService:
 
         excel_buffer.seek(0)
 
-        # Generate filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Generate filename with timezone-aware timestamp
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         site_suffix = f"_{site}" if site else ""
         allocated_suffix = "_allocated" if allocated is True else "_available" if allocated is False else ""
         filename = f"segments{site_suffix}{allocated_suffix}_{timestamp}.xlsx"
@@ -149,8 +149,8 @@ class ExportService:
         csv_content = csv_buffer.getvalue()
         csv_buffer.close()
 
-        # Generate filename
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        # Generate filename with timezone-aware timestamp
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         filename = f"site_statistics_{timestamp}.csv"
 
         # Return streaming response

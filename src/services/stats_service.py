@@ -4,6 +4,7 @@ from datetime import datetime
 from fastapi import HTTPException
 
 from ..utils.database_utils import DatabaseUtils
+from ..utils.database.statistics_utils import StatisticsUtils
 from ..config.settings import SITES
 from ..utils.error_handlers import handle_netbox_errors, retry_on_network_error
 from ..utils.logging_decorators import log_operation_timing
@@ -23,20 +24,21 @@ class StatsService:
     @retry_on_network_error(max_retries=3)
     @log_operation_timing("get_stats", threshold_ms=1000)
     async def get_stats() -> List[Dict[str, Any]]:
-        """Get statistics per site"""
-        stats = []
+        """Get statistics per site - OPTIMIZED: single query for all sites
 
-        for site in SITES:
-            site_stats = await DatabaseUtils.get_site_statistics(site)
-            stats.append(site_stats)
-
-        return stats
+        Instead of N queries (one per site), this makes 1 query and groups in Python.
+        Much more efficient, especially with many sites.
+        """
+        return await StatisticsUtils.get_all_sites_statistics()
     
     @staticmethod
     @handle_netbox_errors
     @log_operation_timing("health_check", threshold_ms=2000)
     async def health_check() -> Dict[str, Any]:
-        """Enhanced health check endpoint with comprehensive system validation"""
+        """Enhanced health check endpoint with comprehensive system validation
+
+        OPTIMIZED: Uses single query for all segments instead of N queries
+        """
         from ..database.netbox_client import get_netbox_client
         from ..config.settings import NETBOX_URL
 
@@ -56,13 +58,15 @@ class StatsService:
         health_data["netbox_version"] = status.get("netbox-version")
         health_data["netbox_status"] = "connected"
 
-        # Test database operations - Get total segments count
-        total_segments = 0
-        site_counts = {}
+        # OPTIMIZED: Get all sites statistics with single query
+        try:
+            all_stats = await StatisticsUtils.get_all_sites_statistics()
 
-        for site in SITES:
-            try:
-                site_stats = await DatabaseUtils.get_site_statistics(site)
+            total_segments = 0
+            site_counts = {}
+
+            for site_stats in all_stats:
+                site = site_stats["site"]
                 site_total = site_stats.get("total_segments", 0)
                 total_segments += site_total
 
@@ -72,23 +76,18 @@ class StatsService:
                     "available": site_stats.get("available", 0),
                     "utilization": site_stats.get("utilization", 0)
                 }
-            except Exception as site_error:
-                logger.warning(f"Error getting stats for site {site}: {site_error}")
-                site_counts[site] = {"error": str(site_error)}
 
-        health_data["total_segments"] = total_segments
-        health_data["sites_summary"] = site_counts
-
-        # Test basic query operations
-        try:
-            recent_segments = await DatabaseUtils.get_segments_with_filters()
+            health_data["total_segments"] = total_segments
+            health_data["sites_summary"] = site_counts
             health_data["storage_operations"] = "working"
             health_data["sample_query_success"] = True
-            health_data["sample_segments_found"] = len(recent_segments)
-        except Exception as query_error:
+
+        except Exception as stats_error:
+            logger.warning(f"Error getting stats: {stats_error}")
             health_data["storage_operations"] = "limited"
             health_data["sample_query_success"] = False
-            health_data["query_error"] = str(query_error)
+            health_data["stats_error"] = str(stats_error)
+            total_segments = 0
 
         # Overall system health summary
         total_sites = len(SITES)

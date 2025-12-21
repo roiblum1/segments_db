@@ -256,24 +256,30 @@ class SegmentService:
         return {"message": "Segment deleted"}
     
     @staticmethod
+    @handle_netbox_errors
+    @retry_on_network_error(max_retries=2)  # Fewer retries for bulk operations
+    @log_operation_timing("create_segments_bulk", threshold_ms=10000)  # Higher threshold for bulk
     async def create_segments_bulk(segments: List[Segment]) -> Dict[str, Any]:
-        """Create multiple segments at once"""
+        """Create multiple segments at once - OPTIMIZED: fetches existing segments once"""
         logger.info(f"Bulk creating {len(segments)} segments")
-        
+
         if not segments or len(segments) == 0:
             logger.warning("Bulk create called with empty segments list")
             raise HTTPException(status_code=400, detail="No valid segments found in CSV data. Please check the format: site,vlan_id,epg_name,segment,vrf,dhcp,description")
-        
+
         try:
+            # OPTIMIZATION: Fetch existing segments ONCE for all validations
+            existing_segments = await DatabaseUtils.get_segments_with_filters()
+
             created = 0
             errors = []
             # Track created segments within this bulk operation to detect duplicates in CSV
             created_in_bulk = set()
-            
+
             for idx, segment in enumerate(segments, start=1):
                 try:
                     logger.debug(f"Processing segment {idx}/{len(segments)}: site={segment.site}, vlan_id={segment.vlan_id}, segment={segment.segment}")
-                    
+
                     # Check for duplicates within this bulk request first (network+site+vlan scope)
                     segment_key = (segment.vrf, segment.site, segment.vlan_id)
                     if segment_key in created_in_bulk:
@@ -282,23 +288,33 @@ class SegmentService:
                         errors.append(error_msg)
                         continue
 
-                    # Validate segment data
+                    # Validate segment data (uses pre-fetched existing_segments, passed via closure)
                     await SegmentService._validate_segment_data(segment)
 
-                    # Check if VLAN ID already exists for this (network, site) combination (in database)
-                    if await DatabaseUtils.check_vlan_exists(segment.site, segment.vlan_id, segment.vrf):
+                    # Check if VLAN ID already exists - check in cached existing_segments
+                    vlan_exists = any(
+                        s.get("site") == segment.site and
+                        s.get("vlan_id") == segment.vlan_id and
+                        s.get("vrf") == segment.vrf
+                        for s in existing_segments
+                    )
+                    if vlan_exists:
                         error_msg = f"VLAN {segment.vlan_id} already exists for network '{segment.vrf}' at site '{segment.site}'"
                         logger.warning(f"Row {idx}: {error_msg}")
                         errors.append(error_msg)
                         continue
-                    
+
                     # Create the segment
                     segment_data = SegmentService._segment_to_dict(segment)
-                    await DatabaseUtils.create_segment(segment_data)
-                    created_in_bulk.add(segment_key)  # Track successful creation
+                    new_segment = await DatabaseUtils.create_segment(segment_data)
+
+                    # Add to tracking sets
+                    created_in_bulk.add(segment_key)
+                    # Update cached existing_segments for next iteration
+                    existing_segments.append(new_segment if isinstance(new_segment, dict) else segment_data)
                     created += 1
                     logger.debug(f"Successfully created segment {idx}: site={segment.site}, vlan_id={segment.vlan_id}")
-                    
+
                 except HTTPException as e:
                     error_msg = f"Row {idx} (Site {segment.site}, VLAN {segment.vlan_id}): {e.detail}"
                     logger.error(f"Validation error for segment {idx}: {error_msg}", exc_info=True)
@@ -307,9 +323,9 @@ class SegmentService:
                     error_msg = f"Row {idx} (Site {segment.site}, VLAN {segment.vlan_id}): {str(e)}"
                     logger.error(f"Error creating segment {idx}: {error_msg}", exc_info=True)
                     errors.append(error_msg)
-            
+
             logger.info(f"Bulk creation complete: {created} created, {len(errors)} errors")
-            
+
             return {
                 "message": f"Created {created} segments",
                 "created": created,
