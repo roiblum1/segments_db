@@ -154,10 +154,22 @@ class SegmentService:
         if not existing_segment:
             raise HTTPException(status_code=404, detail="Segment not found")
 
-        # Check if VLAN ID change would conflict (only if changing VLAN ID, site, or VRF)
+        # VLAN ID is immutable - cannot be changed after creation
+        if existing_segment["vlan_id"] != updated_segment.vlan_id:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "error": "vlan_id_immutable",
+                    "message": f"VLAN ID cannot be changed after creation",
+                    "current_vlan_id": existing_segment["vlan_id"],
+                    "attempted_vlan_id": updated_segment.vlan_id,
+                    "suggestion": "Create a new segment with the desired VLAN ID and delete the old one if needed"
+                }
+            )
+
+        # Check if site or VRF change would conflict (VLAN ID is already immutable)
         existing_vrf = existing_segment.get("vrf")
-        if (existing_segment["vlan_id"] != updated_segment.vlan_id or
-            existing_segment["site"] != updated_segment.site or
+        if (existing_segment["site"] != updated_segment.site or
             existing_vrf != updated_segment.vrf):
             if await DatabaseUtils.check_vlan_exists_excluding_id(updated_segment.site, updated_segment.vlan_id, segment_id, updated_segment.vrf):
                 raise HTTPException(
