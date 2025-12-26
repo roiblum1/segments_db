@@ -102,6 +102,33 @@ function showError(message) {
     }, 5000);
 }
 
+function showVlanIdImmutableError(errorDetail) {
+    const message = `
+        🚫 VLAN ID Cannot Be Changed
+        
+        Current VLAN ID: ${errorDetail.current_vlan_id}
+        Attempted VLAN ID: ${errorDetail.attempted_vlan_id}
+        
+        💡 Solution: Create a new segment with the desired VLAN ID and delete the old one if needed.
+    `.trim();
+    
+    const banner = document.getElementById('errorBanner');
+    banner.innerHTML = message.replace(/\n/g, '<br>');
+    banner.style.display = 'block';
+    banner.style.padding = '15px';
+    banner.style.fontSize = '14px';
+    banner.style.lineHeight = '1.4';
+    
+    // Show for longer since it's an informative message
+    setTimeout(() => {
+        banner.style.display = 'none';
+        // Reset banner styles
+        banner.style.padding = '';
+        banner.style.fontSize = '';
+        banner.style.lineHeight = '';
+    }, 8000);
+}
+
 function showSuccess(message) {
     const banner = document.getElementById('successBanner');
     banner.textContent = message;
@@ -1002,8 +1029,11 @@ function showEditModal(segment) {
                         </select>
                     </div>
                     <div class="form-group">
-                        <label for="editVlanId">VLAN ID</label>
-                        <input type="number" id="editVlanId" min="1" max="4094" value="${segment.vlan_id}" required>
+                        <label for="editVlanId">VLAN ID <span style="font-size: 0.8em; color: #888;">(Read-only)</span></label>
+                        <input type="number" id="editVlanId" min="1" max="4094" value="${segment.vlan_id}" required readonly 
+                               style="background-color: #f5f5f5; color: #666;" 
+                               title="VLAN ID cannot be changed after creation. Create a new segment for a different VLAN ID.">
+                        <small style="color: #666; font-size: 0.8em;">VLAN ID is immutable after creation</small>
                     </div>
                     <div class="form-group">
                         <label for="editEpgName">EPG Name</label>
@@ -1142,7 +1172,13 @@ async function updateSegment(segmentId) {
         await Promise.all([loadSegments(), loadStats()]);
     } catch (error) {
         console.error('Failed to update segment:', error);
-        showError('Failed to update segment: ' + error.message);
+        
+        // Check for immutable VLAN ID error
+        if (error.detail && error.detail.error === 'vlan_id_immutable') {
+            showVlanIdImmutableError(error.detail);
+        } else {
+            showError('Failed to update segment: ' + error.message);
+        }
     } finally {
         const updateBtn = form.querySelector('button[type="submit"]');
         if (updateBtn) {
