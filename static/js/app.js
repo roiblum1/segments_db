@@ -1029,11 +1029,8 @@ function showEditModal(segment) {
                         </select>
                     </div>
                     <div class="form-group">
-                        <label for="editVlanId">VLAN ID <span style="font-size: 0.8em; color: #888;">(Read-only)</span></label>
-                        <input type="number" id="editVlanId" min="1" max="4094" value="${segment.vlan_id}" required readonly 
-                               style="background-color: #f5f5f5; color: #666;" 
-                               title="VLAN ID cannot be changed after creation. Create a new segment for a different VLAN ID.">
-                        <small style="color: #666; font-size: 0.8em;">VLAN ID is immutable after creation</small>
+                        <label for="editVlanId">VLAN ID</label>
+                        <input type="number" id="editVlanId" min="1" max="4094" value="${segment.vlan_id}" required readonly>
                     </div>
                     <div class="form-group">
                         <label for="editEpgName">EPG Name</label>
