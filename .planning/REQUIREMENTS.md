@@ -7,11 +7,11 @@
 
 ### VLAN Scoping Fix
 
-- [ ] **VLAN-01**: VLANs are looked up and created scoped to their VLAN Group (group_id + vid), not globally by vid alone
-- [ ] **VLAN-02**: Two segments with the same VLAN ID in different sites under the same VRF do not share a NetBox VLAN object
-- [ ] **VLAN-03**: EPG name search returns only results from the correct site — no cross-site contamination
-- [ ] **VLAN-04**: Existing production VLANs are assessed for unscoped state before deployment (migration audit query documented)
-- [ ] **VLAN-05**: Group-reassignment fallback logic removed from `get_or_create_vlan()` (~30 lines of complexity eliminated)
+- [x] **VLAN-01**: VLANs are looked up and created scoped to their VLAN Group (group_id + vid), not globally by vid alone
+- [x] **VLAN-02**: Two segments with the same VLAN ID in different sites under the same VRF do not share a NetBox VLAN object
+- [x] **VLAN-03**: EPG name search returns only results from the correct site — no cross-site contamination
+- [x] **VLAN-04**: Existing production VLANs are assessed for unscoped state before deployment (migration audit query documented)
+- [x] **VLAN-05**: Group-reassignment fallback logic removed from `get_or_create_vlan()` (~30 lines of complexity eliminated)
 
 ### Validation — Removal
 
@@ -46,11 +46,11 @@
 
 | Requirement | Phase | Status |
 |-------------|-------|--------|
-| VLAN-01 | Phase 1 | Pending |
-| VLAN-02 | Phase 1 | Pending |
-| VLAN-03 | Phase 1 | Pending |
-| VLAN-04 | Phase 1 | Pending |
-| VLAN-05 | Phase 1 | Pending |
+| VLAN-01 | Phase 1 | Complete |
+| VLAN-02 | Phase 1 | Complete |
+| VLAN-03 | Phase 1 | Complete |
+| VLAN-04 | Phase 1 | Complete |
+| VLAN-05 | Phase 1 | Complete |
 | VAL-01 | Phase 2 | Pending |
 | VAL-02 | Phase 2 | Pending |
 | VAL-03 | Phase 2 | Pending |

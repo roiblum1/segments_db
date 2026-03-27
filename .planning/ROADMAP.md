@@ -13,7 +13,7 @@ This milestone fixes two independent problems in the VLAN Manager. Phase 1 elimi
 
 Decimal phases appear between their surrounding integers in numeric order.
 
-- [ ] **Phase 1: VLAN Site Isolation** - Fix VLAN scoping so each site gets its own VLAN object per VID
+- [x] **Phase 1: VLAN Site Isolation** - Fix VLAN scoping so each site gets its own VLAN object per VID (completed 2026-03-27)
 - [ ] **Phase 2: Validation Rationalization** - Remove dead/wrong-model validators and relax overly strict input rules
 
 ## Phase Details
@@ -70,5 +70,5 @@ Phases execute in numeric order: 1 -> 2
 
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
-| 1. VLAN Site Isolation | 0/1 | Not started | - |
+| 1. VLAN Site Isolation | 1/1 | Complete   | 2026-03-27 |
 | 2. Validation Rationalization | 0/0 | Not started | - |
