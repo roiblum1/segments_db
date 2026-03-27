@@ -11,7 +11,7 @@ from typing import Optional, List
 from fastapi import HTTPException
 
 from .netbox_client import get_netbox_client, run_netbox_get, run_netbox_write
-from .netbox_cache import get_cached, set_cache
+from .netbox_cache import get_cached, set_cache, invalidate_cache
 from .netbox_utils import safe_get_id, safe_get_attr
 from .netbox_constants import (
     TENANT_REDBULL, ROLE_DATA, STATUS_ACTIVE, VLAN_GROUP_PREFIX,
@@ -135,95 +135,59 @@ class NetBoxHelpers:
             # Don't fail the update if cleanup fails
 
     async def get_or_create_vlan(self, vlan_id: int, name: str, site_slug: Optional[str] = None, vrf_name: Optional[str] = None):
-        """Get or create a VLAN in NetBox with tenant, role, and group
+        """Get or create a VLAN in NetBox scoped to its VLAN Group.
 
-        IMPORTANT: VLANs should NOT be assigned to site or site_group.
-        Only Prefixes are assigned to site_groups.
+        Group resolution always happens first. Lookup is by (group_id, vid) —
+        never by vid alone — so two sites with the same VID never share a VLAN object.
 
-        IMPORTANT: NetBox has uniqueness constraint: VLANs must be unique by (Group, Name).
-        However, our business logic is: VLANs are unique by (Network, Site, VLAN_ID).
-        
-        This means:
-        - VLAN 22 can exist in Network1/Site1 AND Network2/Site1 (different groups) ✓
-        - VLAN 22 can exist in Network1/Site1 AND Network1/Site2 (different groups) ✓
-        - VLAN 22 CANNOT exist twice in Network1/Site1 (same group) ✗
-        
-        When updating a VLAN's group, if another VLAN already has that group+name,
-        we should use the existing VLAN instead of creating a duplicate.
+        Raises HTTP 400 if site_slug or vrf_name is missing: a VLAN without
+        group context would silently become an unscoped legacy VLAN.
         """
-        # Build filter - search by VLAN ID only, not by site
-        vlan_filter = {"vid": vlan_id}
+        # Hard fail if group context is missing — prevents creating new unscoped VLANs
+        if not (vrf_name and site_slug):
+            raise HTTPException(
+                status_code=400,
+                detail=f"Cannot create scoped VLAN {vlan_id}: site_slug and vrf_name are required"
+            )
 
-        # Try to get existing VLAN by VID
+        # STEP 1: Resolve group first (site + VRF uniquely determine the VLAN Group)
+        site_group = site_slug.capitalize()  # preserve existing capitalization pattern
+        vlan_group = await self.get_or_create_vlan_group(vrf_name, site_group)
+
+        # STEP 2: Scoped lookup — (group_id, vid) never returns a VLAN from another site
         vlan = await run_netbox_get(
-            lambda: self.nb.ipam.vlans.get(**vlan_filter),
-            f"get VLAN {vlan_id}"
+            lambda: self.nb.ipam.vlans.get(group_id=vlan_group.id, vid=vlan_id),
+            f"get VLAN {vlan_id} in group '{vlan_group.name}'"
         )
 
-        if not vlan:
-            # Prepare VLAN data - NO site or site_group assignment for VLANs
-            vlan_data = {
-                "vid": vlan_id,
-                "name": name,
-            }
-
-            # Fetch reference data sequentially (all cached lookups)
-            # Tenant and Role are cached (3600s TTL) - lookups are instant
-            tenant = await self.get_tenant(TENANT_REDBULL)
-            if tenant:
-                vlan_data["tenant"] = tenant.id
-
-            role = await self.get_role(ROLE_DATA, "vlan")
-            if role:
-                vlan_data["role"] = role.id
-
-            # VLAN Group (may need creation)
-            if vrf_name and site_slug:
-                # Normalize site_slug to match NetBox site group naming (capitalized)
-                site_group = site_slug.capitalize()
-                try:
-                    vlan_group = await self.get_or_create_vlan_group(vrf_name, site_group)
-                    if vlan_group:
-                        vlan_data["group"] = vlan_group.id
-                except Exception as e:
-                    logger.warning(f"Failed to get/create VLAN group: {e}")
-
-            # Create new VLAN
-            vlan_data["status"] = STATUS_ACTIVE
-            vlan = await run_netbox_write(
-                lambda: self.nb.ipam.vlans.create(**vlan_data),
-                f"create VLAN {vlan_id}"
-            )
-        else:
-            # VLAN exists - check if we need to update group
-            if vrf_name and site_slug:
-                site_group = site_slug.capitalize()
-                vlan_group = await self.get_or_create_vlan_group(vrf_name, site_group)
-                
-                # Check if VLAN with same VID already exists in target group
-                existing_vlan = await run_netbox_get(
-                    lambda: self.nb.ipam.vlans.get(group_id=vlan_group.id, vid=vlan_id),
-                    f"check VLAN {vlan_id} in group '{vlan_group.name}'"
-                )
-                
-                if existing_vlan:
-                    # Use existing VLAN, update name if needed
-                    if existing_vlan.name != name:
-                        existing_vlan.name = name
-                        await run_netbox_write(lambda: existing_vlan.save(), f"update VLAN {vlan_id} name")
-                    return existing_vlan
-                
-                # Update current VLAN's group
-                if not vlan.group or (hasattr(vlan.group, 'id') and vlan.group.id != vlan_group.id):
-                    vlan.group = vlan_group.id
-                    if vlan.name != name:
-                        vlan.name = name
-                    await run_netbox_write(lambda: vlan.save(), f"update VLAN {vlan_id}")
-            elif vlan.name != name:
-                # Only name update needed
+        if vlan:
+            # Correctly scoped VLAN found — update name if it drifted
+            if vlan.name != name:
                 vlan.name = name
                 await run_netbox_write(lambda: vlan.save(), f"update VLAN {vlan_id} name")
+            return vlan
 
+        # Not found in this group — create a new site-scoped VLAN
+        vlan_data = {
+            "vid": vlan_id,
+            "name": name,
+            "group": vlan_group.id,
+            "status": STATUS_ACTIVE,
+        }
+
+        tenant = await self.get_tenant(TENANT_REDBULL)
+        if tenant:
+            vlan_data["tenant"] = tenant.id
+
+        role = await self.get_role(ROLE_DATA, "vlan")
+        if role:
+            vlan_data["role"] = role.id
+
+        vlan = await run_netbox_write(
+            lambda: self.nb.ipam.vlans.create(**vlan_data),
+            f"create VLAN {vlan_id} in group '{vlan_group.name}'"
+        )
+        invalidate_cache(CACHE_KEY_VLANS)
         return vlan
 
     async def get_vrf(self, vrf_name: str):
