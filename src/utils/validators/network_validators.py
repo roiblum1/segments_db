@@ -101,16 +101,16 @@ class NetworkValidators:
             network = ipaddress.ip_network(segment, strict=False)
             prefix_len = network.prefixlen
 
-            # Typical datacenter subnets: /16 to /29
-            # /30 and /31 are too small for practical use (only 2-4 IPs)
-            # /32 is a host, not a network
+            # Typical datacenter subnets: /16 to /31
+            # /32 is a host route, not a network
             # /8 to /15 are too large for typical allocations
-            if prefix_len < 16 or prefix_len > 29:
+            if prefix_len < 16 or prefix_len > 31:
                 logger.warning(f"Unusual subnet mask: /{prefix_len}")
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Subnet mask /{prefix_len} is outside typical range (/16 to /29). "
-                           f"Use /16-/24 for large networks or /25-/29 for smaller subnets."
+                    detail=f"Subnet mask /{prefix_len} is outside supported range (/16 to /31). "
+                           f"Use /16-/24 for large networks, /25-/29 for smaller subnets, "
+                           f"or /30-/31 for point-to-point links (RFC 3021)."
                 )
 
             logger.debug(f"Subnet mask validation passed: /{prefix_len}")
@@ -226,25 +226,15 @@ class NetworkValidators:
             network = ipaddress.ip_network(segment, strict=False)
             num_addresses = network.num_addresses
 
-            # For networks with less than 4 addresses, warn user
-            if num_addresses < 4:
-                logger.warning(f"Very small network: {segment} has only {num_addresses} addresses")
+            # Reject networks with fewer than 2 addresses (/32 host routes)
+            if num_addresses < 2:
+                logger.warning(f"Network too small: {segment} has only {num_addresses} addresses")
                 raise HTTPException(
                     status_code=400,
-                    detail=f"Network {segment} is too small ({num_addresses} addresses). "
-                           f"Minimum recommended size is /30 (4 addresses) for non-point-to-point links."
+                    detail=f"Network {segment} has fewer than 2 addresses and cannot be used as a subnet."
                 )
 
-            # For /24 and larger, verify reasonable size
-            usable_hosts = num_addresses - 2  # Exclude network and broadcast
-
-            if usable_hosts < 1:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Network {segment} has no usable host addresses"
-                )
-
-            logger.debug(f"Network validation passed: {segment} has {usable_hosts} usable addresses")
+            logger.debug(f"Network validation passed: {segment} has {num_addresses} addresses")
 
         except ValueError as e:
             raise HTTPException(
