@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-03-27)
 ## Current Position
 
 Phase: 3 of 3 (Database Layer Refactor)
-Plan: 1 of 2 in current phase
-Status: In progress
-Last activity: 2026-03-28 -- 03-01 complete: database layer collapsed (netbox_segments.py + netbox_objects.py)
+Plan: 2 of 2 in current phase
+Status: Complete
+Last activity: 2026-03-28 -- 03-02 complete: caller migration done, MongoDB abstraction layer fully removed
 
-Progress: [█████░░░░░] 50%
+Progress: [██████████] 100%
 
 ## Performance Metrics
 
@@ -39,6 +39,7 @@ Progress: [█████░░░░░] 50%
 | Phase                                | Total | Tasks | Files |
 |--------------------------------------|-------|-------|-------|
 | Phase 03-database-layer-refactor P01 | 5 min | 3     | 8     |
+| Phase 03-database-layer-refactor P02 | 8 | 3 tasks | 5 files |
 
 ## Accumulated Context
 
@@ -61,6 +62,8 @@ Recent decisions affecting current work:
 - [Phase 03]: [03-01] MongoDB query interpreter deleted — Python-native typed parameter filtering replaces _matches_query/_matches_condition (65 lines removed)
 - [Phase 03]: [03-01] NetBoxHelpers renamed to NetBoxObjects; get_site renamed to get_site_group; get_redbull_tenant_id collapsed
 - [Phase 03]: [03-01] 5 cache-key helpers moved from netbox_constants.py to netbox_utils.py; nb_client param removed from prefix_to_segment
+- [Phase 03]: [03-02] allocated_at derived on read in prefix_to_segment — no allocation_time parameter needed at call sites
+- [Phase 03]: [03-02] search_segments uses Python re.compile inline loop — identical semantics to removed MongoDB $regex/$or
 
 ### Roadmap Evolution
 
@@ -78,5 +81,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-28
-Stopped at: Completed 03-01-PLAN.md (database layer collapse: netbox_segments.py + netbox_objects.py)
+Stopped at: Completed 03-02-PLAN.md (caller migration: MongoDB abstraction layer fully removed from src/)
 Resume file: None
