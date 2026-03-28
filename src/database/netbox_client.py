@@ -10,7 +10,7 @@ from typing import Optional, Callable, Any, Tuple
 import asyncio
 import time
 import concurrent.futures
-from functools import lru_cache, wraps
+from functools import lru_cache
 import urllib3
 
 from ..config.settings import NETBOX_URL, NETBOX_TOKEN, NETBOX_SSL_VERIFY
@@ -43,12 +43,6 @@ def get_netbox_write_executor():
     )
 
 
-@lru_cache(maxsize=1)
-def get_netbox_executor():
-    """Default executor - uses read pool for backward compatibility"""
-    return get_netbox_read_executor()
-
-
 def get_netbox_client() -> pynetbox.api:
     """Get or create the NetBox API client"""
     global _netbox_client
@@ -66,41 +60,6 @@ def close_netbox_client():
     global _netbox_client
     if _netbox_client is not None:
         _netbox_client = None
-
-
-def log_netbox_timing(operation_name: str):
-    """Decorator to log slow NetBox operations only (>2s)"""
-    def decorator(func):
-        @wraps(func)
-        async def async_wrapper(*args, **kwargs):
-            start = time.time()
-            try:
-                result = await func(*args, **kwargs)
-                elapsed = (time.time() - start) * 1000
-                # Only log slow operations (>2s)
-                if elapsed > 2000:
-                    logger.warning(f"NETBOX SLOW: {operation_name} took {elapsed:.0f}ms")
-                return result
-            except Exception as e:
-                elapsed = (time.time() - start) * 1000
-                logger.error(f"NETBOX FAILED: {operation_name} failed after {elapsed:.0f}ms - {e}")
-                raise
-
-        def sync_wrapper(*args, **kwargs):
-            start = time.time()
-            try:
-                result = func(*args, **kwargs)
-                elapsed = (time.time() - start) * 1000
-                if elapsed > 2000:
-                    logger.warning(f"NETBOX SLOW: {operation_name} took {elapsed:.0f}ms")
-                return result
-            except Exception as e:
-                elapsed = (time.time() - start) * 1000
-                logger.error(f"NETBOX FAILED: {operation_name} failed after {elapsed:.0f}ms - {e}")
-                raise
-
-        return async_wrapper if asyncio.iscoroutinefunction(func) else sync_wrapper
-    return decorator
 
 
 async def run_netbox_get(get_operation: Callable, operation_name: str) -> Any:

@@ -84,7 +84,7 @@ def get_vlan_info(vlan_obj: Any) -> tuple[Optional[int], str]:
     return vlan_id, vlan_name
 
 
-def prefix_to_segment(prefix, nb_client) -> Dict[str, Any]:
+def prefix_to_segment(prefix) -> Dict[str, Any]:
     """Convert NetBox prefix object to our segment format"""
     from .netbox_constants import (
         CUSTOM_FIELD_CLUSTER, CUSTOM_FIELD_DHCP, STATUS_ACTIVE, STATUS_RESERVED,
@@ -145,3 +145,32 @@ def prefix_to_segment(prefix, nb_client) -> Dict[str, Any]:
         "released_at": None,
     }
 
+
+# ---------------------------------------------------------------------------
+# Cache-key helpers (moved here from netbox_constants.py)
+# ---------------------------------------------------------------------------
+
+def get_tenant_cache_key(tenant_name: str) -> str:
+    """Get cache key for tenant"""
+    return f"tenant_{tenant_name.lower()}"
+
+
+def get_role_cache_key(role_name: str) -> str:
+    """Get cache key for role"""
+    return f"role_{role_name.lower()}"
+
+
+def get_site_group_cache_key(site_group_id: int) -> str:
+    """Get cache key for site group"""
+    return f"site_group_{site_group_id}"
+
+
+def get_vlan_group_cache_key(group_name: str) -> str:
+    """Get cache key for VLAN group"""
+    return f"vlan_group_{group_name}"
+
+
+def format_vlan_group_name(vrf_name: str, site_group: str) -> str:
+    """Format VLAN group name: <VRF_name>-ClickCluster-<Site>"""
+    from .netbox_constants import VLAN_GROUP_PREFIX
+    return f"{vrf_name}-{VLAN_GROUP_PREFIX}-{site_group}"

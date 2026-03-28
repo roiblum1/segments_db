@@ -40,23 +40,3 @@ CACHE_TTL_SHORT = 300      # 5 minutes - VLAN groups (may change with new alloca
 CACHE_TTL_MEDIUM = 600     # 10 minutes - Prefixes, VLANs (change moderately)
 CACHE_TTL_LONG = 3600      # 1 hour - Tenants, Roles, Site Groups, VRFs (static data)
 
-def get_tenant_cache_key(tenant_name: str) -> str:
-    """Get cache key for tenant"""
-    return f"tenant_{tenant_name.lower()}"
-
-def get_role_cache_key(role_name: str) -> str:
-    """Get cache key for role"""
-    return f"role_{role_name.lower()}"
-
-def get_site_group_cache_key(site_group_id: int) -> str:
-    """Get cache key for site group"""
-    return f"site_group_{site_group_id}"
-
-def get_vlan_group_cache_key(group_name: str) -> str:
-    """Get cache key for VLAN group"""
-    return f"vlan_group_{group_name}"
-
-def format_vlan_group_name(vrf_name: str, site_group: str) -> str:
-    """Format VLAN group name: <VRF_name>-ClickCluster-<Site>"""
-    return f"{vrf_name}-{VLAN_GROUP_PREFIX}-{site_group}"
-

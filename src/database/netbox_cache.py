@@ -25,9 +25,6 @@ _cache: Dict[str, Dict[str, Any]] = {
     CACHE_KEY_VLANS: {"data": None, "timestamp": 0, "ttl": CACHE_TTL_MEDIUM},  # 10 minutes
     CACHE_KEY_REDBULL_TENANT_ID: {"data": None, "timestamp": 0, "ttl": CACHE_TTL_LONG},  # 1 hour
     CACHE_KEY_VRFS: {"data": None, "timestamp": 0, "ttl": CACHE_TTL_LONG},  # 1 hour
-    "site_groups": {"data": None, "timestamp": 0, "ttl": CACHE_TTL_LONG},  # 1 hour
-    "roles": {"data": None, "timestamp": 0, "ttl": CACHE_TTL_LONG},  # 1 hour
-    "tenants": {"data": None, "timestamp": 0, "ttl": CACHE_TTL_LONG},  # 1 hour
 }
 
 # Default TTL for dynamic cache keys (e.g., site_group_123, role_data_prefix)
