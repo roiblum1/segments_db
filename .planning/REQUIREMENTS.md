@@ -15,10 +15,10 @@
 
 ### Validation — Removal
 
-- [ ] **VAL-01**: `security_validators.py` module deleted entirely (XSS, path traversal, rate limit — dead code with wrong threat model for internal tool)
-- [ ] **VAL-02**: NoSQL injection checks removed (`$` key detection, `__proto__`/`constructor` blocklist — MongoDB patterns irrelevant to pynetbox REST backend)
-- [ ] **VAL-03**: Dead code validators removed: `sanitize_input`, `validate_no_path_traversal`, `validate_rate_limit_data`, `validate_concurrent_modification`, `validate_json_serializable`, `validate_timezone_aware_datetime`
-- [ ] **VAL-04**: All call sites for removed validators cleaned up (no broken imports or dead calls in services)
+- [x] **VAL-01**: `security_validators.py` module deleted entirely (XSS, path traversal, rate limit — dead code with wrong threat model for internal tool)
+- [x] **VAL-02**: NoSQL injection checks removed (`$` key detection, `__proto__`/`constructor` blocklist — MongoDB patterns irrelevant to pynetbox REST backend)
+- [x] **VAL-03**: Dead code validators removed: `sanitize_input`, `validate_no_path_traversal`, `validate_rate_limit_data`, `validate_concurrent_modification`, `validate_json_serializable`, `validate_timezone_aware_datetime`
+- [x] **VAL-04**: All call sites for removed validators cleaned up (no broken imports or dead calls in services)
 
 ### Validation — Relaxation
 
@@ -51,10 +51,10 @@
 | VLAN-03 | Phase 1 | Complete |
 | VLAN-04 | Phase 1 | Complete |
 | VLAN-05 | Phase 1 | Complete |
-| VAL-01 | Phase 2 | Pending |
-| VAL-02 | Phase 2 | Pending |
-| VAL-03 | Phase 2 | Pending |
-| VAL-04 | Phase 2 | Pending |
+| VAL-01 | Phase 2 | Complete |
+| VAL-02 | Phase 2 | Complete |
+| VAL-03 | Phase 2 | Complete |
+| VAL-04 | Phase 2 | Complete |
 | VAL-05 | Phase 2 | Pending |
 | VAL-06 | Phase 2 | Pending |
 
