@@ -1,25 +1,25 @@
 """
-NetBox Storage Implementation
+NetBox Storage Lifecycle
 
-This module provides a storage interface that uses NetBox's REST API
-for managing VLANs and IP prefixes (segments).
+This module provides only the three lifecycle functions:
+- init_storage(): Connect to NetBox, wire the segments module, prefetch reference data.
+- close_storage(): Cleanup NetBox client.
+- prefetch_reference_data(): Pre-warm the caches for reference objects.
+
+The NetBoxStorage class and get_storage() factory have been removed.
+All segment operations are now in netbox_segments.py.
 """
 
 import logging
-from typing import Optional, List, Dict, Any
-from datetime import datetime, timezone
 
 from .netbox_client import get_netbox_client, close_netbox_client, run_netbox_get
-from .netbox_helpers import NetBoxHelpers
-from .netbox_query_ops import NetBoxQueryOps
-from .netbox_crud_ops import NetBoxCRUDOps
-from .netbox_cache import get_cached, set_cache
-from .netbox_utils import safe_get_id, safe_get_attr, get_site_slug_from_prefix
+from .netbox_cache import set_cache
 from .netbox_constants import (
     TENANT_REDBULL, TENANT_REDBULL_SLUG, ROLE_DATA,
     CACHE_KEY_REDBULL_TENANT_ID, CACHE_KEY_TENANT_REDBULL,
-    CACHE_TTL_LONG
+    CACHE_TTL_LONG,
 )
+from .netbox_segments import init_segments_module
 
 logger = logging.getLogger(__name__)
 
@@ -72,14 +72,13 @@ async def prefetch_reference_data():
 
 
 async def init_storage():
-    """Initialize NetBox storage - verify connection and prefetch reference data"""
+    """Initialize NetBox storage - verify connection, wire modules, prefetch reference data"""
     try:
         nb = get_netbox_client()
         status = await run_netbox_get(lambda: nb.status(), "get NetBox status")
         logger.info(f"NetBox connection successful - Version: {status.get('netbox-version')}")
-
+        init_segments_module(nb)           # Wire segments module to client
         await prefetch_reference_data()
-
     except Exception as e:
         logger.error(f"Failed to connect to NetBox: {e}", exc_info=True)
         raise
@@ -88,49 +87,3 @@ async def init_storage():
 async def close_storage():
     """Close NetBox storage - cleanup if needed"""
     close_netbox_client()
-
-
-class NetBoxStorage:
-    """NetBox Storage Implementation"""
-
-    def __init__(self):
-        self.nb = get_netbox_client()
-        self.helpers = NetBoxHelpers(self.nb)
-        self.query_ops = NetBoxQueryOps(self.nb, self.helpers)
-        self.crud_ops = NetBoxCRUDOps(self.nb, self.helpers, self.query_ops)
-
-    # Query Operations
-    async def find(self, query: Optional[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
-        return await self.query_ops.find(query)
-
-    async def find_one(self, query: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        return await self.query_ops.find_one(query)
-
-    async def count_documents(self, query: Optional[Dict[str, Any]] = None) -> int:
-        return await self.query_ops.count_documents(query)
-
-    # CRUD Operations
-    async def insert_one(self, document: Dict[str, Any]) -> Dict[str, Any]:
-        return await self.crud_ops.insert_one(document)
-
-    async def update_one(self, query: Dict[str, Any], update: Dict[str, Any]) -> bool:
-        return await self.crud_ops.update_one(query, update)
-
-    async def delete_one(self, query: Dict[str, Any]) -> bool:
-        return await self.crud_ops.delete_one(query)
-
-    async def find_one_and_update(
-        self,
-        query: Dict[str, Any],
-        update: Dict[str, Any],
-        sort: Optional[List[tuple]] = None
-    ) -> Optional[Dict[str, Any]]:
-        return await self.crud_ops.find_one_and_update(query, update, sort)
-
-    async def get_vrfs(self) -> List[str]:
-        return await self.helpers.get_vrfs()
-
-
-def get_storage() -> NetBoxStorage:
-    """Get the NetBox storage instance"""
-    return NetBoxStorage()
