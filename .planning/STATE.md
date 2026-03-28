@@ -10,9 +10,9 @@ See: .planning/PROJECT.md (updated 2026-03-27)
 ## Current Position
 
 Phase: 2 of 2 (Validation Rationalization)
-Plan: 1 of 1 in current phase
-Status: In progress
-Last activity: 2026-03-28 -- Completed 02-01-PLAN.md (dead validator removal + security validator deletion)
+Plan: 2 of 2 in current phase
+Status: Complete
+Last activity: 2026-03-28 -- Completed 02-02-PLAN.md (EPG regex + subnet mask range relaxation)
 
 Progress: [██████████] 100%
 
@@ -28,10 +28,10 @@ Progress: [██████████] 100%
 | Phase                           | Plans | Total | Avg/Plan |
 |---------------------------------|-------|-------|----------|
 | 01-vlan-site-isolation          | 1     | 2 min | 2 min    |
-| 02-validation-rationalization   | 1     | 3 min | 3 min    |
+| 02-validation-rationalization   | 2     | 4 min | 2 min    |
 
 **Recent Trend:**
-- Last 5 plans: 2 min
+- Last 5 plans: 1 min
 - Trend: -
 
 *Updated after each plan completion*
@@ -52,6 +52,8 @@ Recent decisions affecting current work:
 - [02-01] Deleted security_validators.py -- XSS/path-traversal/rate-limit checks are wrong threat model for an internal REST API tool with trusted operators
 - [02-01] Removed NoSQL injection checks ($ and __proto__ patterns) from validate_update_data -- MongoDB-specific patterns meaningless against pynetbox/NetBox
 - [02-01] Removed 4 dead validator methods with zero call sites -- `validate_concurrent_modification`, `validate_timezone_aware_datetime`, `validate_json_serializable`, `validate_update_data`
+- [Phase 02-02]: [02-02] EPG name allows dots and forward slashes -- operators routinely name segments after the prefix they represent; NetBox has no VLAN name character restrictions
+- [Phase 02-02]: [02-02] /31 subnets allowed per RFC 3021 -- valid for point-to-point links; num_addresses < 2 threshold is sufficient, usable_hosts guard removed
 
 ### Pending Todos
 
@@ -65,5 +67,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-28
-Stopped at: Completed 02-01-PLAN.md (dead validator removal + security validator deletion)
+Stopped at: Completed 02-02-PLAN.md (EPG regex + subnet mask range relaxation)
 Resume file: None

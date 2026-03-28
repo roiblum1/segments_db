@@ -22,8 +22,8 @@
 
 ### Validation — Relaxation
 
-- [ ] **VAL-05**: EPG name regex updated to accept dots and forward slashes (allows CIDR format like `192.168.1.0/24`)
-- [ ] **VAL-06**: Subnet mask range expanded to /16–/31 (adds /30 and /31 for point-to-point links per RFC 3021)
+- [x] **VAL-05**: EPG name regex updated to accept dots and forward slashes (allows CIDR format like `192.168.1.0/24`)
+- [x] **VAL-06**: Subnet mask range expanded to /16–/31 (adds /30 and /31 for point-to-point links per RFC 3021)
 
 ## v2 Requirements
 
@@ -55,8 +55,8 @@
 | VAL-02 | Phase 2 | Complete |
 | VAL-03 | Phase 2 | Complete |
 | VAL-04 | Phase 2 | Complete |
-| VAL-05 | Phase 2 | Pending |
-| VAL-06 | Phase 2 | Pending |
+| VAL-05 | Phase 2 | Complete |
+| VAL-06 | Phase 2 | Complete |
 
 **Coverage:**
 - v1 requirements: 11 total
