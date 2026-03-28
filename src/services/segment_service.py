@@ -28,13 +28,9 @@ class SegmentService:
         Validators.validate_no_reserved_ips(segment.segment)
         Validators.validate_network_broadcast_gateway(segment.segment)
 
-        # Description validation (XSS protection)
+        # Description validation
         if segment.description:
             Validators.validate_description(segment.description)
-            Validators.validate_no_script_injection(segment.description, "description")
-
-        # EPG name XSS protection
-        Validators.validate_no_script_injection(segment.epg_name, "epg_name")
 
         # IP overlap validation - get all existing segments
         existing_segments = await DatabaseUtils.get_segments_with_filters()

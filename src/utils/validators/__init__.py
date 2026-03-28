@@ -6,14 +6,12 @@ from specialized validator modules. This maintains backward compatibility with e
 Module structure:
 - input_validators.py: Site, VLAN ID, EPG name, cluster name, description
 - network_validators.py: IP format, subnet masks, reserved IPs, overlap detection
-- security_validators.py: XSS prevention, script injection, path traversal
-- organization_validators.py: VRF, allocation state, uniqueness, concurrent modification
-- data_validators.py: JSON serialization, timezone, CSV, update data
+- organization_validators.py: VRF, allocation state, uniqueness
+- data_validators.py: CSV row data
 """
 
 from .input_validators import InputValidators
 from .network_validators import NetworkValidators
-from .security_validators import SecurityValidators
 from .organization_validators import OrganizationValidators
 from .data_validators import DataValidators
 
@@ -36,12 +34,6 @@ class Validators:
     validate_ip_overlap = staticmethod(NetworkValidators.validate_ip_overlap)
     validate_network_broadcast_gateway = staticmethod(NetworkValidators.validate_network_broadcast_gateway)
 
-    # Security validation methods
-    sanitize_input = staticmethod(SecurityValidators.sanitize_input)
-    validate_no_script_injection = staticmethod(SecurityValidators.validate_no_script_injection)
-    validate_no_path_traversal = staticmethod(SecurityValidators.validate_no_path_traversal)
-    validate_rate_limit_data = staticmethod(SecurityValidators.validate_rate_limit_data)
-
     # Organization/business validation methods
     validate_segment_not_allocated = staticmethod(OrganizationValidators.validate_segment_not_allocated)
     validate_vlan_name_uniqueness = staticmethod(OrganizationValidators.validate_vlan_name_uniqueness)
@@ -56,7 +48,6 @@ __all__ = [
     "Validators",
     "InputValidators",
     "NetworkValidators",
-    "SecurityValidators",
     "OrganizationValidators",
     "DataValidators",
 ]
