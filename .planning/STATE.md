@@ -10,11 +10,11 @@ See: .planning/PROJECT.md (updated 2026-03-27)
 ## Current Position
 
 Phase: 3 of 3 (Database Layer Refactor)
-Plan: 0 of 0 in current phase
-Status: Not started
-Last activity: 2026-03-28 -- Phase 2 complete; Phase 3 added for database layer refactoring
+Plan: 1 of 2 in current phase
+Status: In progress
+Last activity: 2026-03-28 -- 03-01 complete: database layer collapsed (netbox_segments.py + netbox_objects.py)
 
-Progress: [░░░░░░░░░░] 0%
+Progress: [█████░░░░░] 50%
 
 ## Performance Metrics
 
@@ -36,6 +36,10 @@ Progress: [░░░░░░░░░░] 0%
 
 *Updated after each plan completion*
 
+| Phase                                | Total | Tasks | Files |
+|--------------------------------------|-------|-------|-------|
+| Phase 03-database-layer-refactor P01 | 5 min | 3     | 8     |
+
 ## Accumulated Context
 
 ### Decisions
@@ -54,6 +58,9 @@ Recent decisions affecting current work:
 - [02-01] Removed 4 dead validator methods with zero call sites -- `validate_concurrent_modification`, `validate_timezone_aware_datetime`, `validate_json_serializable`, `validate_update_data`
 - [Phase 02-02]: [02-02] EPG name allows dots and forward slashes -- operators routinely name segments after the prefix they represent; NetBox has no VLAN name character restrictions
 - [Phase 02-02]: [02-02] /31 subnets allowed per RFC 3021 -- valid for point-to-point links; num_addresses < 2 threshold is sufficient, usable_hosts guard removed
+- [Phase 03]: [03-01] MongoDB query interpreter deleted — Python-native typed parameter filtering replaces _matches_query/_matches_condition (65 lines removed)
+- [Phase 03]: [03-01] NetBoxHelpers renamed to NetBoxObjects; get_site renamed to get_site_group; get_redbull_tenant_id collapsed
+- [Phase 03]: [03-01] 5 cache-key helpers moved from netbox_constants.py to netbox_utils.py; nb_client param removed from prefix_to_segment
 
 ### Roadmap Evolution
 
@@ -71,5 +78,5 @@ None yet.
 ## Session Continuity
 
 Last session: 2026-03-28
-Stopped at: Completed 02-02-PLAN.md (EPG regex + subnet mask range relaxation)
+Stopped at: Completed 03-01-PLAN.md (database layer collapse: netbox_segments.py + netbox_objects.py)
 Resume file: None
