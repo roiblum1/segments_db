@@ -3,10 +3,11 @@
 Handles filtering, searching, and checking VLAN existence.
 """
 
+import re
 import logging
 from typing import Optional, List, Dict, Any
 
-from ...database.netbox_storage import get_storage
+from ...database.netbox_segments import get_segments, get_segment_by_id as _get_segment_by_id, get_vrfs as _get_vrfs
 
 logger = logging.getLogger(__name__)
 
@@ -17,23 +18,14 @@ class SegmentQueries:
     @staticmethod
     async def get_segments_with_filters(site: Optional[str] = None, allocated: Optional[bool] = None) -> List[Dict[str, Any]]:
         """Get segments with optional filters"""
-        storage = get_storage()
-
-        query = {}
-        if site:
-            query["site"] = site
-        if allocated is not None:
-            if allocated:
-                query["cluster_name"] = {"$ne": None}
-            else:
-                query["cluster_name"] = None
-
-        segments = await storage.find(query)
+        segments = await get_segments(
+            site=site,
+            allocated=allocated,
+        )
 
         # Sort by vlan_id
         segments.sort(key=lambda x: x.get("vlan_id", 0))
 
-        # IDs are already strings in JSON storage
         return segments
 
     @staticmethod
@@ -48,18 +40,11 @@ class SegmentQueries:
         Returns:
             True if VLAN exists for this (vrf, site, vlan_id) combination
         """
-        storage = get_storage()
-
-        query = {
-            "site": site,
-            "vlan_id": vlan_id
-        }
-
-        # Add VRF to query if provided (multi-network support)
+        kwargs = {"site": site, "vlan_id": vlan_id}
         if vrf:
-            query["vrf"] = vrf
-
-        existing = await storage.find_one(query)
+            kwargs["vrf"] = vrf
+        results = await get_segments(**kwargs)
+        existing = results[0] if results else None
         return existing is not None
 
     @staticmethod
@@ -75,26 +60,20 @@ class SegmentQueries:
         Returns:
             True if VLAN exists for this (vrf, site, vlan_id) combination (excluding specified ID)
         """
-        storage = get_storage()
-
-        query = {
-            "site": site,
-            "vlan_id": vlan_id,
-            "_id": {"$ne": exclude_id}
-        }
-
-        # Add VRF to query if provided (multi-network support)
+        kwargs = {"site": site, "vlan_id": vlan_id}
         if vrf:
-            query["vrf"] = vrf
+            kwargs["vrf"] = vrf
+        results = await get_segments(**kwargs)
 
-        logger.debug(f"Checking VLAN existence: vrf={vrf}, site={site}, vlan_id={vlan_id}, exclude_id={exclude_id}")
-
-        existing = await storage.find_one(query)
+        # Exclude the specific segment being updated
+        existing = next((s for s in results if str(s.get("_id")) != str(exclude_id)), None)
 
         if existing:
             logger.debug(f"Found existing VLAN: {existing.get('_id')} (excluding {exclude_id})")
         else:
             logger.debug(f"No conflicting VLAN found")
+
+        logger.debug(f"Checking VLAN existence: vrf={vrf}, site={site}, vlan_id={vlan_id}, exclude_id={exclude_id}")
 
         return existing is not None
 
@@ -105,51 +84,30 @@ class SegmentQueries:
         allocated: Optional[bool] = None
     ) -> List[Dict[str, Any]]:
         """Search segments by cluster name, EPG name, or VLAN ID"""
-        storage = get_storage()
+        # Fetch base set using typed parameters (efficient — uses cache)
+        segments = await get_segments(site=site, allocated=allocated)
 
-        # Build base query with optional filters
-        query = {}
-        if site:
-            query["site"] = site
-        if allocated is not None:
-            if allocated:
-                query["cluster_name"] = {"$ne": None}
-            else:
-                query["cluster_name"] = None
-
-        # Add search conditions - search in multiple fields
-        search_conditions = []
-
-        # Try to parse as VLAN ID (integer)
+        # Python-native search across multiple fields
         try:
-            vlan_id = int(search_query)
-            search_conditions.append({"vlan_id": vlan_id})
+            vlan_id_search = int(search_query)
         except ValueError:
-            pass  # Not a valid integer, skip VLAN ID search
+            vlan_id_search = None
 
-        # Search in text fields (case-insensitive)
-        text_search = {"$regex": search_query, "$options": "i"}
-        search_conditions.extend([
-            {"cluster_name": text_search},
-            {"epg_name": text_search},
-            {"description": text_search},
-            {"segment": text_search}
-        ])
+        pattern = re.compile(re.escape(search_query), re.IGNORECASE)
 
-        # Combine search conditions with OR
-        if search_conditions:
-            query["$or"] = search_conditions
+        def _matches_search(s: dict) -> bool:
+            if vlan_id_search is not None and s.get("vlan_id") == vlan_id_search:
+                return True
+            for field in ("cluster_name", "epg_name", "description", "segment"):
+                if pattern.search(str(s.get(field) or "")):
+                    return True
+            return False
 
-        segments = await storage.find(query)
-
-        # Sort by vlan_id
-        segments.sort(key=lambda x: x.get("vlan_id", 0))
-
-        # IDs are already strings in JSON storage
-        return segments
+        results = [s for s in segments if _matches_search(s)]
+        results.sort(key=lambda x: x.get("vlan_id", 0))
+        return results
 
     @staticmethod
     async def get_vrfs() -> List[str]:
         """Get list of available VRFs from NetBox"""
-        storage = get_storage()
-        return await storage.get_vrfs()
+        return await _get_vrfs()

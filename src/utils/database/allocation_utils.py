@@ -4,11 +4,16 @@ Handles all allocation-related operations including finding allocations,
 atomic allocation, releasing segments, and supporting shared segments.
 """
 
+import re
 import logging
 import time
 from typing import Optional, Dict, Any
 
-from ...database.netbox_storage import get_storage
+from ...database.netbox_segments import (
+    get_segments,
+    update_segment as _update_segment,
+    allocate_segment as _allocate_segment,
+)
 from ..time_utils import get_current_utc
 
 logger = logging.getLogger(__name__)
@@ -21,7 +26,7 @@ class AllocationUtils:
     async def find_existing_allocation(cluster_name: str, site: str, vrf: str = None) -> Optional[Dict[str, Any]]:
         """Find existing allocation for a cluster at a site and VRF
         Supports both single clusters and shared segments (comma-separated)
-        
+
         Args:
             cluster_name: Name of the cluster
             site: Site name
@@ -29,37 +34,22 @@ class AllocationUtils:
 
         Uses optimized NetBox API filtering to reduce data transfer
         """
-        storage = get_storage()
-
-        # Build query filter - VRF is important to ensure correct network matching
-        query_filter = {
-            "cluster_name": cluster_name,
-            "site": site,
-            "released": False
-        }
-        
-        # Add VRF filter if provided
+        # Exact match first
+        kwargs = {"site": site, "cluster_name": cluster_name, "released": False}
         if vrf:
-            query_filter["vrf"] = vrf
-
-        # Try exact match first
-        exact_match = await storage.find_one(query_filter)
+            kwargs["vrf"] = vrf
+        candidates = await get_segments(**kwargs)
+        exact_match = candidates[0] if candidates else None
         if exact_match:
             return exact_match
 
-        # For regex search (shared segments), we still need find_one
-        # but this is rare, so less impact
-        shared_query_filter = {
-            "cluster_name": {"$regex": f"(^|,){cluster_name}(,|$)"},
-            "site": site,
-            "released": False
-        }
-        
-        # Add VRF filter if provided
-        if vrf:
-            shared_query_filter["vrf"] = vrf
-            
-        shared_match = await storage.find_one(shared_query_filter)
+        # Shared-segment regex search (cluster may be part of "cluster1,cluster2")
+        all_site_segs = await get_segments(site=site, released=False, **({"vrf": vrf} if vrf else {}))
+        pattern = re.compile(rf"(^|,){re.escape(cluster_name)}(,|$)")
+        shared_match = next(
+            (s for s in all_site_segs if s.get("cluster_name") and pattern.search(s["cluster_name"])),
+            None
+        )
         return shared_match
 
     @staticmethod
@@ -72,36 +62,15 @@ class AllocationUtils:
             cluster_name: Name of cluster to allocate to
             vrf: VRF/Network to filter by (e.g., "Network1", "Network2") - REQUIRED
         """
-        storage = get_storage()
-        allocation_time = get_current_utc()
-
-        # Build query filter with required VRF
-        query_filter = {
-            "site": site,
-            "cluster_name": None,
-            "vrf": vrf
-        }
-
         logger.info(f"Allocating from site={site}, VRF={vrf}")
-
-        # Use find_one_and_update for atomic operation - prevents race conditions
-        # Find segments that are either never allocated (released: False, cluster_name: None)
-        # OR have been released (released: True, cluster_name: None)
-        # Sort by vlan_id to always allocate the smallest available VLAN ID first
         t1 = time.time()
-        result = await storage.find_one_and_update(
-            query_filter,
-            {
-                "$set": {
-                    "cluster_name": cluster_name,
-                    "allocated_at": allocation_time,
-                    "released": False,
-                    "released_at": None
-                }
-            },
-            sort=[("vlan_id", 1)]  # Sort by vlan_id ascending to get smallest first
+        result = await _allocate_segment(
+            site=site,
+            vrf=vrf,
+            cluster_name=cluster_name,
+            sort_by_vlan_id=True
         )
-        logger.info(f"⏱️  storage.find_one_and_update took {(time.time() - t1)*1000:.0f}ms")
+        logger.info(f"allocate_segment took {(time.time() - t1)*1000:.0f}ms")
         return result
 
     @staticmethod
@@ -109,106 +78,68 @@ class AllocationUtils:
         """Find an available segment for a site (kept for backward compatibility)
         Returns any available segment regardless of subnet size
         """
-        storage = get_storage()
-        return await storage.find_one({
-            "site": site,
-            "cluster_name": None
-            # Allow both released: False (never allocated) and released: True (previously released)
-            # Support all subnet sizes
-        })
+        segments = await get_segments(site=site, allocated=False)
+        return segments[0] if segments else None
 
     @staticmethod
     async def allocate_segment(segment_id: str, cluster_name: str) -> bool:
         """Allocate a segment to a cluster (kept for backward compatibility)"""
-        storage = get_storage()
         allocation_time = get_current_utc()
-
-        result = await storage.update_one(
-            {"_id": segment_id, "cluster_name": None},  # Added condition to prevent race
-            {
-                "$set": {
-                    "cluster_name": cluster_name,
-                    "allocated_at": allocation_time,
-                    "released": False,
-                    "released_at": None
-                }
-            }
-        )
-        return result  # Result is already bool, no need for > 0 comparison
+        return await _update_segment(segment_id, {
+            "cluster_name": cluster_name,
+            "allocated_at": allocation_time,
+            "released": False,
+            "released_at": None
+        })
 
     @staticmethod
     async def release_segment(cluster_name: str, site: str, vrf: str = None) -> bool:
         """Release a segment allocation
         For shared segments, removes only the specified cluster from the list
-        
+
         Args:
             cluster_name: Name of the cluster to release
             site: Site name
             vrf: VRF/Network name (optional, but recommended for correct matching)
         """
-        storage = get_storage()
-
-        # Build query filter - VRF is important to ensure correct network matching
-        query_filter = {
-            "cluster_name": {"$regex": f"(^|,){cluster_name}(,|$)"},
-            "site": site,
-            "released": False
-        }
-        
-        # Add VRF filter if provided
+        # Build base filter
+        kwargs = {"site": site, "released": False}
         if vrf:
-            query_filter["vrf"] = vrf
+            kwargs["vrf"] = vrf
+        all_segments = await get_segments(**kwargs)
 
-        # First find the segment to check if it's shared
-        segment = await storage.find_one(query_filter)
-
+        # Find segment containing this cluster (handles shared clusters)
+        pattern = re.compile(rf"(^|,){re.escape(cluster_name)}(,|$)")
+        segment = next(
+            (s for s in all_segments if s.get("cluster_name") and pattern.search(s["cluster_name"])),
+            None
+        )
         if not segment:
             return False
 
         current_clusters = segment["cluster_name"]
 
-        # If it's an exact match (single cluster), release normally
         if current_clusters == cluster_name:
-            result = await storage.update_one(
-                {"_id": segment["_id"]},
-                {
-                    "$set": {
-                        "cluster_name": None,
-                        "released": True,
-                        "released_at": get_current_utc()
-                    }
-                }
-            )
-            return result  # Result is already bool, no need for > 0 comparison
+            # Single cluster — release fully
+            return await _update_segment(segment["_id"], {
+                "cluster_name": None,
+                "released": True,
+                "released_at": get_current_utc()
+            })
 
-        # If it's a shared segment, remove only this cluster
+        # Shared cluster — remove only this cluster
         cluster_list = [c.strip() for c in current_clusters.split(",")]
         if cluster_name in cluster_list:
             cluster_list.remove(cluster_name)
-
             if len(cluster_list) == 0:
-                # No clusters left, release the segment
-                result = await storage.update_one(
-                    {"_id": segment["_id"]},
-                    {
-                        "$set": {
-                            "cluster_name": None,
-                            "released": True,
-                            "released_at": get_current_utc()
-                        }
-                    }
-                )
+                return await _update_segment(segment["_id"], {
+                    "cluster_name": None,
+                    "released": True,
+                    "released_at": get_current_utc()
+                })
             else:
-                # Update with remaining clusters
-                new_cluster_names = ",".join(cluster_list)
-                result = await storage.update_one(
-                    {"_id": segment["_id"]},
-                    {
-                        "$set": {
-                            "cluster_name": new_cluster_names
-                        }
-                    }
-                )
-            return result  # Result is already bool, no need for > 0 comparison
+                return await _update_segment(segment["_id"], {
+                    "cluster_name": ",".join(cluster_list)
+                })
 
         return False
