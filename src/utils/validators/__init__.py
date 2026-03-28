@@ -45,13 +45,9 @@ class Validators:
     # Organization/business validation methods
     validate_segment_not_allocated = staticmethod(OrganizationValidators.validate_segment_not_allocated)
     validate_vlan_name_uniqueness = staticmethod(OrganizationValidators.validate_vlan_name_uniqueness)
-    validate_concurrent_modification = staticmethod(OrganizationValidators.validate_concurrent_modification)
     validate_vrf = staticmethod(OrganizationValidators.validate_vrf)
 
     # Data validation methods
-    validate_update_data = staticmethod(DataValidators.validate_update_data)
-    validate_timezone_aware_datetime = staticmethod(DataValidators.validate_timezone_aware_datetime)
-    validate_json_serializable = staticmethod(DataValidators.validate_json_serializable)
     validate_csv_row_data = staticmethod(DataValidators.validate_csv_row_data)
 
 

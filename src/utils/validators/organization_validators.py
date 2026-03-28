@@ -74,25 +74,6 @@ class OrganizationValidators:
         logger.debug(f"EPG name uniqueness validation passed for {epg_name} in {vrf}/{site}")
 
     @staticmethod
-    def validate_concurrent_modification(original_updated_at: Any, current_updated_at: Any) -> None:
-        """
-        Validate optimistic locking - ensure record hasn't been modified since read
-
-        Args:
-            original_updated_at: Timestamp when record was read
-            current_updated_at: Current timestamp in database
-
-        Raises:
-            HTTPException 409: If record was modified by another request
-        """
-        if original_updated_at != current_updated_at:
-            logger.warning("Concurrent modification detected")
-            raise HTTPException(
-                status_code=409,
-                detail="Record was modified by another request. Please refresh and try again."
-            )
-
-    @staticmethod
     async def validate_vrf(vrf: str) -> None:
         """Validate if VRF exists in NetBox
 
