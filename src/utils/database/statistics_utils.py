@@ -6,7 +6,7 @@ Handles calculation of site statistics and utilization metrics.
 import logging
 from typing import Dict, Any, List
 
-from ...database.netbox_storage import get_storage
+from ...database.netbox_segments import get_segments
 from ...config.settings import SITES
 
 logger = logging.getLogger(__name__)
@@ -25,10 +25,8 @@ class StatisticsUtils:
         2. Calculates counts in Python instead of additional API calls
         3. Reduces load on NetBox
         """
-        storage = get_storage()
-
         # Single query instead of two count_documents calls
-        segments = await storage.find({"site": site})
+        segments = await get_segments(site=site)
 
         total_segments = len(segments)
         allocated = sum(1 for s in segments
@@ -52,10 +50,8 @@ class StatisticsUtils:
         Returns:
             List of statistics dictionaries, one per site
         """
-        storage = get_storage()
-
         # Single query for ALL segments (uses 10-minute cache)
-        all_segments = await storage.find({})
+        all_segments = await get_segments()
 
         # Group by site and calculate stats in Python
         stats = []

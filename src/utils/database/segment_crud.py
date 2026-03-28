@@ -6,7 +6,12 @@ Handles create, read, update, delete operations for segments.
 import logging
 from typing import Optional, Dict, Any
 
-from ...database.netbox_storage import get_storage
+from ...database.netbox_segments import (
+    create_segment as _create_segment,
+    get_segment_by_id as _get_segment_by_id,
+    update_segment as _update_segment,
+    delete_segment as _delete_segment,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -21,8 +26,6 @@ class SegmentCRUD:
         Returns:
             Segment ID as string
         """
-        storage = get_storage()
-
         new_segment = {
             **segment_data,
             "cluster_name": None,
@@ -31,36 +34,27 @@ class SegmentCRUD:
             "released_at": None
         }
 
-        result = await storage.insert_one(new_segment)
-        # insert_one returns a dict with "_id" field, extract it
+        result = await _create_segment(new_segment)
+        # _create_segment returns a dict with "_id" field, extract it
         if isinstance(result, dict) and "_id" in result:
             return str(result["_id"])
         elif isinstance(result, str):
             return result
         else:
-            logger.warning(f"Unexpected return type from insert_one: {type(result)}, value: {result}")
-            # Fallback: try to get ID from result
+            logger.warning(f"Unexpected return type from create_segment: {type(result)}, value: {result}")
             return str(result.get("_id", result)) if isinstance(result, dict) else str(result)
 
     @staticmethod
     async def get_segment_by_id(segment_id: str) -> Optional[Dict[str, Any]]:
         """Get segment by ID"""
-        storage = get_storage()
-        return await storage.find_one({"_id": segment_id})
+        return await _get_segment_by_id(segment_id)
 
     @staticmethod
     async def update_segment_by_id(segment_id: str, update_data: Dict[str, Any]) -> bool:
         """Update segment by ID"""
-        storage = get_storage()
-        result = await storage.update_one(
-            {"_id": segment_id},
-            {"$set": update_data}
-        )
-        return result  # Result is already bool, no need for > 0 comparison
+        return await _update_segment(segment_id, update_data)
 
     @staticmethod
     async def delete_segment_by_id(segment_id: str) -> bool:
         """Delete segment by ID"""
-        storage = get_storage()
-        result = await storage.delete_one({"_id": segment_id})
-        return result  # Result is already bool, no need for > 0 comparison
+        return await _delete_segment(segment_id)
