@@ -60,11 +60,11 @@ class InputValidators:
             )
 
         # Check for invalid characters (NetBox VLAN names have restrictions)
-        if not re.match(r'^[a-zA-Z0-9_\-]+$', epg_name):
+        if not re.match(r'^[a-zA-Z0-9_\-\./]+$', epg_name):
             logger.warning(f"EPG name contains invalid characters: '{epg_name}'")
             raise HTTPException(
                 status_code=400,
-                detail="EPG name can only contain letters, numbers, underscores, and hyphens"
+                detail="EPG name can only contain letters, numbers, underscores, hyphens, dots, and forward slashes"
             )
 
     @staticmethod
