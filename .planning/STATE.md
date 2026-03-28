@@ -5,16 +5,16 @@
 See: .planning/PROJECT.md (updated 2026-03-27)
 
 **Core value:** Operators can create, allocate, and search VLANs and prefixes across any VRF+Site combination without polluting each other's data in NetBox.
-**Current focus:** Phase 2: Validation Rationalization
+**Current focus:** Phase 3: Database Layer Refactor
 
 ## Current Position
 
-Phase: 2 of 2 (Validation Rationalization)
-Plan: 2 of 2 in current phase
-Status: Complete
-Last activity: 2026-03-28 -- Completed 02-02-PLAN.md (EPG regex + subnet mask range relaxation)
+Phase: 3 of 3 (Database Layer Refactor)
+Plan: 0 of 0 in current phase
+Status: Not started
+Last activity: 2026-03-28 -- Phase 2 complete; Phase 3 added for database layer refactoring
 
-Progress: [██████████] 100%
+Progress: [░░░░░░░░░░] 0%
 
 ## Performance Metrics
 
@@ -54,6 +54,10 @@ Recent decisions affecting current work:
 - [02-01] Removed 4 dead validator methods with zero call sites -- `validate_concurrent_modification`, `validate_timezone_aware_datetime`, `validate_json_serializable`, `validate_update_data`
 - [Phase 02-02]: [02-02] EPG name allows dots and forward slashes -- operators routinely name segments after the prefix they represent; NetBox has no VLAN name character restrictions
 - [Phase 02-02]: [02-02] /31 subnets allowed per RFC 3021 -- valid for point-to-point links; num_addresses < 2 threshold is sufficient, usable_hosts guard removed
+
+### Roadmap Evolution
+
+- Phase 3 added: Database Layer Refactor — collapse 8-file over-engineered database module into a clean, domain-named structure; remove MongoDB abstraction layer, dead code, and misleading names
 
 ### Pending Todos
 
