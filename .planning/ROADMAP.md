@@ -56,12 +56,12 @@ Plans:
 4. No validator function in the codebase checks for NoSQL injection patterns (`$`, `__proto__`, `constructor`) or performs XSS sanitization
 5. All remaining validators have live call sites -- no dead validator functions exist
 
-**Plans**: TBD
+**Plans**: 2 plans
 
 Plans:
 
-- [ ] 02-01: TBD
-- [ ] 02-02: TBD
+- [ ] 02-01-PLAN.md — Delete security_validators.py and remove all dead validators (VAL-01, VAL-02, VAL-03, VAL-04)
+- [ ] 02-02-PLAN.md — Relax EPG name regex and expand subnet mask range to /31 (VAL-05, VAL-06)
 
 ## Progress
 
@@ -71,4 +71,4 @@ Phases execute in numeric order: 1 -> 2
 | Phase | Plans Complete | Status | Completed |
 |-------|----------------|--------|-----------|
 | 1. VLAN Site Isolation | 1/1 | Complete   | 2026-03-27 |
-| 2. Validation Rationalization | 0/0 | Not started | - |
+| 2. Validation Rationalization | 0/2 | Not started | - |
